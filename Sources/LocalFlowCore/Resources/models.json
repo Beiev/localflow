@@ -1,0 +1,482 @@
+[
+  {
+    "id": "asr8",
+    "title": "Распознавание · баланс",
+    "repo": "FluidInference/parakeet-tdt-0.6b-v3-coreml",
+    "revision": "7dd20fe6b1797d35f5e3307e8b1732d9a178edfe",
+    "folder": "parakeet-tdt-0.6b-v3",
+    "files": [
+      {
+        "path": "Decoder.mlmodelc/analytics/coremldata.bin",
+        "size": 243,
+        "hash": "4238c4e81ecd0dc94bd7dfbb60f7e2cc824107c1ffe0387b8607b72833dba350",
+        "sha256": true
+      },
+      {
+        "path": "Decoder.mlmodelc/coremldata.bin",
+        "size": 554,
+        "hash": "18647af085d87bd8f3121c8a9b4d4564c1ede038dab63d295b4e745cf2d7fb99",
+        "sha256": true
+      },
+      {
+        "path": "Decoder.mlmodelc/metadata.json",
+        "size": 3427,
+        "hash": "781350d40ed83511afc3bc31a804e6a543e69d04",
+        "sha256": false
+      },
+      {
+        "path": "Decoder.mlmodelc/model.mil",
+        "size": 13110,
+        "hash": "95328ba81ca8dceb16c039e62f1a7d447ede43c2",
+        "sha256": false
+      },
+      {
+        "path": "Decoder.mlmodelc/weights/weight.bin",
+        "size": 23604992,
+        "hash": "48adf0f0d47c406c8253d4f7fef967436a39da14f5a65e66d5a4b407be355d41",
+        "sha256": true
+      },
+      {
+        "path": "Encoder.mlmodelc/analytics/coremldata.bin",
+        "size": 243,
+        "hash": "42e638870d73f26b332918a3496ce36793fbb413a81cbd3d16ba01328637a105",
+        "sha256": true
+      },
+      {
+        "path": "Encoder.mlmodelc/coremldata.bin",
+        "size": 485,
+        "hash": "d48034a167a82e88fc3df64f60af963ab3983538271175b8319e7d5720a0fb86",
+        "sha256": true
+      },
+      {
+        "path": "Encoder.mlmodelc/metadata.json",
+        "size": 2921,
+        "hash": "aecde9a8c4ff70c5b5d227a079650fcf5033caee",
+        "sha256": false
+      },
+      {
+        "path": "Encoder.mlmodelc/model.mil",
+        "size": 959769,
+        "hash": "93d1301ccde7c2ca447af6c01ab05bfda5a5dd2c",
+        "sha256": false
+      },
+      {
+        "path": "Encoder.mlmodelc/weights/weight.bin",
+        "size": 445187200,
+        "hash": "e2020f323703477a5b21d7c2d282c403e371afb5962e79877e3033e73ba6f421",
+        "sha256": true
+      },
+      {
+        "path": "JointDecisionv3.mlmodelc/analytics/coremldata.bin",
+        "size": 243,
+        "hash": "26def4bf73dd56d29dee21c8ef97cb8969e62f6120ed1adc91e46828e2737b6c",
+        "sha256": true
+      },
+      {
+        "path": "JointDecisionv3.mlmodelc/coremldata.bin",
+        "size": 521,
+        "hash": "f5fc08b741400f0088492c9e839418b1e18522f19cba28d361dd030c5f398342",
+        "sha256": true
+      },
+      {
+        "path": "JointDecisionv3.mlmodelc/metadata.json",
+        "size": 3453,
+        "hash": "0461ef9e55ba8e8ba0d2cb33b6e1a031b0d481d7",
+        "sha256": false
+      },
+      {
+        "path": "JointDecisionv3.mlmodelc/model.mil",
+        "size": 11775,
+        "hash": "0a80fde4b1ec61093a03fc0fc3431172db34a4d2",
+        "sha256": false
+      },
+      {
+        "path": "JointDecisionv3.mlmodelc/weights/weight.bin",
+        "size": 12642764,
+        "hash": "4e0e63d840032f7f07ddb1d64446051166281e5491bf22da8a945c41f6eedb3e",
+        "sha256": true
+      },
+      {
+        "path": "Preprocessor.mlmodelc/analytics/coremldata.bin",
+        "size": 243,
+        "hash": "c9beeb989c8d66f8be11df59bc6df277ec76cee404f6865b46243835ef562f6d",
+        "sha256": true
+      },
+      {
+        "path": "Preprocessor.mlmodelc/coremldata.bin",
+        "size": 486,
+        "hash": "dbde3f2300842c1fd51ef3ff948a0bcffe65ffd2dca10707f2509f32c1d65b1d",
+        "sha256": true
+      },
+      {
+        "path": "Preprocessor.mlmodelc/metadata.json",
+        "size": 2841,
+        "hash": "06162c58cf2f5343a0e60f36f843bcdf3cc58527",
+        "sha256": false
+      },
+      {
+        "path": "Preprocessor.mlmodelc/model.mil",
+        "size": 28181,
+        "hash": "f987e2479228436c49189aa47edb376db74dcff5",
+        "sha256": false
+      },
+      {
+        "path": "Preprocessor.mlmodelc/weights/weight.bin",
+        "size": 491072,
+        "hash": "129b76e3aeafa8afa3ea76d995b964b145fe83700d579f6ff42c4c38fa0968ea",
+        "sha256": true
+      },
+      {
+        "path": "parakeet_vocab.json",
+        "size": 151122,
+        "hash": "c684822ec3b671ebc449c433a7012398d39b8bb0",
+        "sha256": false
+      }
+    ]
+  },
+  {
+    "id": "asr4",
+    "title": "Распознавание · компактное",
+    "repo": "FluidInference/parakeet-tdt-0.6b-v3-coreml",
+    "revision": "7dd20fe6b1797d35f5e3307e8b1732d9a178edfe",
+    "folder": "parakeet-tdt-0.6b-v3",
+    "files": [
+      {
+        "path": "Decoder.mlmodelc/analytics/coremldata.bin",
+        "size": 243,
+        "hash": "4238c4e81ecd0dc94bd7dfbb60f7e2cc824107c1ffe0387b8607b72833dba350",
+        "sha256": true
+      },
+      {
+        "path": "Decoder.mlmodelc/coremldata.bin",
+        "size": 554,
+        "hash": "18647af085d87bd8f3121c8a9b4d4564c1ede038dab63d295b4e745cf2d7fb99",
+        "sha256": true
+      },
+      {
+        "path": "Decoder.mlmodelc/metadata.json",
+        "size": 3427,
+        "hash": "781350d40ed83511afc3bc31a804e6a543e69d04",
+        "sha256": false
+      },
+      {
+        "path": "Decoder.mlmodelc/model.mil",
+        "size": 13110,
+        "hash": "95328ba81ca8dceb16c039e62f1a7d447ede43c2",
+        "sha256": false
+      },
+      {
+        "path": "Decoder.mlmodelc/weights/weight.bin",
+        "size": 23604992,
+        "hash": "48adf0f0d47c406c8253d4f7fef967436a39da14f5a65e66d5a4b407be355d41",
+        "sha256": true
+      },
+      {
+        "path": "EncoderInt4.mlmodelc/analytics/coremldata.bin",
+        "size": 243,
+        "hash": "c296e0229ab5e32412fda92f8dcf47f0e63f0c34e343c0e2654f6c37649d2d79",
+        "sha256": true
+      },
+      {
+        "path": "EncoderInt4.mlmodelc/coremldata.bin",
+        "size": 512,
+        "hash": "3e6539cd5d5f1c3bd5a01921cd94af85eab609d49d47e1436a16faac958754d6",
+        "sha256": true
+      },
+      {
+        "path": "EncoderInt4.mlmodelc/metadata.json",
+        "size": 2954,
+        "hash": "3f3b994be82e93196572b4d7c2c054aefd48f1ad",
+        "sha256": false
+      },
+      {
+        "path": "EncoderInt4.mlmodelc/model.mil",
+        "size": 874445,
+        "hash": "bf620dded63605d789a724012251649b1a33f5a6",
+        "sha256": false
+      },
+      {
+        "path": "EncoderInt4.mlmodelc/weights/weight.bin",
+        "size": 297912320,
+        "hash": "6fcf5596562948c7482e116bdb3f364279bed970893b86737b67fe89f36367d9",
+        "sha256": true
+      },
+      {
+        "path": "JointDecisionv3.mlmodelc/analytics/coremldata.bin",
+        "size": 243,
+        "hash": "26def4bf73dd56d29dee21c8ef97cb8969e62f6120ed1adc91e46828e2737b6c",
+        "sha256": true
+      },
+      {
+        "path": "JointDecisionv3.mlmodelc/coremldata.bin",
+        "size": 521,
+        "hash": "f5fc08b741400f0088492c9e839418b1e18522f19cba28d361dd030c5f398342",
+        "sha256": true
+      },
+      {
+        "path": "JointDecisionv3.mlmodelc/metadata.json",
+        "size": 3453,
+        "hash": "0461ef9e55ba8e8ba0d2cb33b6e1a031b0d481d7",
+        "sha256": false
+      },
+      {
+        "path": "JointDecisionv3.mlmodelc/model.mil",
+        "size": 11775,
+        "hash": "0a80fde4b1ec61093a03fc0fc3431172db34a4d2",
+        "sha256": false
+      },
+      {
+        "path": "JointDecisionv3.mlmodelc/weights/weight.bin",
+        "size": 12642764,
+        "hash": "4e0e63d840032f7f07ddb1d64446051166281e5491bf22da8a945c41f6eedb3e",
+        "sha256": true
+      },
+      {
+        "path": "Preprocessor.mlmodelc/analytics/coremldata.bin",
+        "size": 243,
+        "hash": "c9beeb989c8d66f8be11df59bc6df277ec76cee404f6865b46243835ef562f6d",
+        "sha256": true
+      },
+      {
+        "path": "Preprocessor.mlmodelc/coremldata.bin",
+        "size": 486,
+        "hash": "dbde3f2300842c1fd51ef3ff948a0bcffe65ffd2dca10707f2509f32c1d65b1d",
+        "sha256": true
+      },
+      {
+        "path": "Preprocessor.mlmodelc/metadata.json",
+        "size": 2841,
+        "hash": "06162c58cf2f5343a0e60f36f843bcdf3cc58527",
+        "sha256": false
+      },
+      {
+        "path": "Preprocessor.mlmodelc/model.mil",
+        "size": 28181,
+        "hash": "f987e2479228436c49189aa47edb376db74dcff5",
+        "sha256": false
+      },
+      {
+        "path": "Preprocessor.mlmodelc/weights/weight.bin",
+        "size": 491072,
+        "hash": "129b76e3aeafa8afa3ea76d995b964b145fe83700d579f6ff42c4c38fa0968ea",
+        "sha256": true
+      },
+      {
+        "path": "parakeet_vocab.json",
+        "size": 151122,
+        "hash": "c684822ec3b671ebc449c433a7012398d39b8bb0",
+        "sha256": false
+      }
+    ]
+  },
+  {
+    "id": "editor",
+    "title": "Редактирование · Qwen 4B",
+    "repo": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+    "revision": "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",
+    "folder": "qwen3-4b",
+    "files": [
+      {
+        "path": "added_tokens.json",
+        "size": 707,
+        "hash": "b54f9135e44c1e81047e8d05cb027af8bc039eed",
+        "sha256": false
+      },
+      {
+        "path": "chat_template.jinja",
+        "size": 4040,
+        "hash": "a18870ad4ba26ac6c43758fc506c1bb6ff206bb4",
+        "sha256": false
+      },
+      {
+        "path": "config.json",
+        "size": 938,
+        "hash": "ce8b8eccd1cdf6d8a30767f58e8ff858dd15eab5",
+        "sha256": false
+      },
+      {
+        "path": "generation_config.json",
+        "size": 238,
+        "hash": "432531a002c181a19de338313d2375e9d7494d7e",
+        "sha256": false
+      },
+      {
+        "path": "merges.txt",
+        "size": 1671853,
+        "hash": "31349551d90c7606f325fe0f11bbb8bd5fa0d7c7",
+        "sha256": false
+      },
+      {
+        "path": "model.safetensors",
+        "size": 2263022417,
+        "hash": "2a73c6c248601ab904e035548abd8e6abb65ea27dcb5f342fb0a8910eb44173f",
+        "sha256": true
+      },
+      {
+        "path": "model.safetensors.index.json",
+        "size": 63964,
+        "hash": "4741a210f9920c2949ca73bbb2a7ce9583e7fd83",
+        "sha256": false
+      },
+      {
+        "path": "special_tokens_map.json",
+        "size": 613,
+        "hash": "ac23c0aaa2434523c494330aeb79c58395378103",
+        "sha256": false
+      },
+      {
+        "path": "tokenizer.json",
+        "size": 11422654,
+        "hash": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+        "sha256": true
+      },
+      {
+        "path": "tokenizer_config.json",
+        "size": 5440,
+        "hash": "474bbcd82077828bdec32b8dbc1826cdff2a792a",
+        "sha256": false
+      },
+      {
+        "path": "vocab.json",
+        "size": 2776833,
+        "hash": "4783fe10ac3adce15ac8f358ef5462739852c569",
+        "sha256": false
+      }
+    ]
+  },
+  {
+    "id": "speakers",
+    "title": "Разделение голосов",
+    "repo": "FluidInference/speaker-diarization-coreml",
+    "revision": "1ed7a662fdc7109e36d822db793ee6eebdaf8594",
+    "folder": "speaker-diarization",
+    "files": [
+      {
+        "path": "Embedding.mlmodelc/analytics/coremldata.bin",
+        "size": 243,
+        "hash": "8d6706436639b53830b4dbe8aaf9c9a843f7f582d63e16f3cb8bb7c6ccd58682",
+        "sha256": true
+      },
+      {
+        "path": "Embedding.mlmodelc/coremldata.bin",
+        "size": 704,
+        "hash": "4a705bac27d151d9642f37609296042a15602a42253039e0921dc9e75da7e004",
+        "sha256": true
+      },
+      {
+        "path": "Embedding.mlmodelc/metadata.json",
+        "size": 2818,
+        "hash": "71c70e8c4972bbba271728ee32d9629a31498976",
+        "sha256": false
+      },
+      {
+        "path": "Embedding.mlmodelc/model.mil",
+        "size": 78432,
+        "hash": "39c8175875111f64245779cecad5185968a6db34",
+        "sha256": false
+      },
+      {
+        "path": "Embedding.mlmodelc/weights/weight.bin",
+        "size": 13412288,
+        "hash": "99356b2985b8d43880a657024d941d450b38820451ccff903f76ed4e52d1868b",
+        "sha256": true
+      },
+      {
+        "path": "FBank.mlmodelc/analytics/coremldata.bin",
+        "size": 243,
+        "hash": "0e8bd3a8b82ac123580989f490e4d9245127c535857630b543311268accc3f0a",
+        "sha256": true
+      },
+      {
+        "path": "FBank.mlmodelc/coremldata.bin",
+        "size": 853,
+        "hash": "57ac436bb0671cbb5527a339134d695f752eb77f7a18966b93c6835335595759",
+        "sha256": true
+      },
+      {
+        "path": "FBank.mlmodelc/metadata.json",
+        "size": 3409,
+        "hash": "b48f04253ef4cd5f92ef76453c57d82ccee3ba31",
+        "sha256": false
+      },
+      {
+        "path": "FBank.mlmodelc/model.mil",
+        "size": 15667,
+        "hash": "0e01e8a188d4fe7ee97866948c2ee159fe505248",
+        "sha256": false
+      },
+      {
+        "path": "FBank.mlmodelc/weights/weight.bin",
+        "size": 1776896,
+        "hash": "9e83fdd3ea78064b078069e4d9141603c61c47a27fd19e7e3142ff7476f8db36",
+        "sha256": true
+      },
+      {
+        "path": "PldaRho.mlmodelc/analytics/coremldata.bin",
+        "size": 243,
+        "hash": "8940ea6044dbcbefa22da8cc41e0b485e1fb5ed89aecaf37c6e0c483a97ddcd7",
+        "sha256": true
+      },
+      {
+        "path": "PldaRho.mlmodelc/coremldata.bin",
+        "size": 763,
+        "hash": "4d9741477f721c79b09fcdfe455110c4b7d4272e2de3496bf1729d966d3ee418",
+        "sha256": true
+      },
+      {
+        "path": "PldaRho.mlmodelc/metadata.json",
+        "size": 2749,
+        "hash": "b964649416a95f0d8b3f7155a9a1ef46b79543aa",
+        "sha256": false
+      },
+      {
+        "path": "PldaRho.mlmodelc/model.mil",
+        "size": 7613,
+        "hash": "30c6a1b1bfb5a5a2a9498d52c9529c15ba9e3917",
+        "sha256": false
+      },
+      {
+        "path": "PldaRho.mlmodelc/weights/weight.bin",
+        "size": 200192,
+        "hash": "80f7d229202636d372428c90596f11a91545f07da77259f07153aaf225914a36",
+        "sha256": true
+      },
+      {
+        "path": "Segmentation.mlmodelc/analytics/coremldata.bin",
+        "size": 243,
+        "hash": "64265f8e7ad41a5f68d630c15288c2499cca5892ad49e20096819cdeac004cdb",
+        "sha256": true
+      },
+      {
+        "path": "Segmentation.mlmodelc/coremldata.bin",
+        "size": 812,
+        "hash": "ea51481b8bd3e496ad3cf16f066ddaa37f20e8772eaac76b3393c28de20e06bc",
+        "sha256": true
+      },
+      {
+        "path": "Segmentation.mlmodelc/metadata.json",
+        "size": 3410,
+        "hash": "604d6f1f829f47120b5d291825e28a7ee01b5d18",
+        "sha256": false
+      },
+      {
+        "path": "Segmentation.mlmodelc/model.mil",
+        "size": 43063,
+        "hash": "60b457187b267fd64cd00410f4165d218c4fe7d7",
+        "sha256": false
+      },
+      {
+        "path": "Segmentation.mlmodelc/weights/weight.bin",
+        "size": 5959360,
+        "hash": "c3189a64946c75bc24fcb98afe89ad78c52bdbadfdf65e857fb1b81e2cc9fbb2",
+        "sha256": true
+      },
+      {
+        "path": "plda-parameters.json",
+        "size": 89416,
+        "hash": "104dc2572aec3eb7d606a619fa738cdc43824cff",
+        "sha256": false
+      }
+    ]
+  }
+]

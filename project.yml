@@ -1,0 +1,60 @@
+name: LocalFlow
+options:
+  bundleIdPrefix: com.beiev
+  deploymentTarget:
+    macOS: '15.0'
+packages:
+  LocalFlowCore:
+    path: .
+targets:
+  LocalFlow:
+    type: application
+    platform: macOS
+    sources:
+      - Sources/LocalFlow
+      - path: Resources/LocalFlow.icns
+        buildPhase: resources
+    dependencies:
+      - package: LocalFlowCore
+        product: LocalFlowCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.beiev.localflow
+        PRODUCT_NAME: LocalFlow
+        SWIFT_VERSION: '5.0'
+        CODE_SIGN_IDENTITY: '-'
+        CODE_SIGN_STYLE: Manual
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: Resources/LocalFlow.entitlements
+        CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Resources/Info.plist
+        MACOSX_DEPLOYMENT_TARGET: '15.0'
+    scheme:
+      gatherCoverageData: false
+  LocalFlowBench:
+    type: tool
+    platform: macOS
+    sources:
+      - Sources/LocalFlowBench
+    dependencies:
+      - package: LocalFlowCore
+        product: LocalFlowCore
+    settings:
+      base:
+        SWIFT_VERSION: '5.0'
+        CODE_SIGN_IDENTITY: '-'
+  LocalFlowCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests/LocalFlowCoreTests
+    dependencies:
+      - package: LocalFlowCore
+        product: LocalFlowCore
+    settings:
+      base:
+        SWIFT_VERSION: '5.0'
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_IDENTITY: '-'
+        CODE_SIGN_STYLE: Manual
