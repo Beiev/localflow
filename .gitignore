@@ -16,3 +16,5 @@ xcuserdata/
 *.aiff
 *.aif
 *.flac
+
+build.noindex/

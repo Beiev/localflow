@@ -1,16 +1,23 @@
 #!/bin/zsh
 set -euo pipefail
 cd "${0:A:h:h}"
-app="build/Build/Products/${CONFIGURATION:-Release}/LocalFlow.app"
+app="build.noindex/Build/Products/${CONFIGURATION:-Release}/LocalFlow.app"
 [[ -d "$app" ]] || { echo 'Run Scripts/build.sh first'; exit 1; }
+if pgrep -f '^.*/LocalFlow[.]app/Contents/MacOS/LocalFlow$' >/dev/null; then
+  echo 'Сначала завершите LocalFlow через меню приложения, затем повторите установку.'
+  exit 1
+fi
 mkdir -p "$HOME/Applications"
 staging=$(mktemp -d "$HOME/Applications/.localflow-install.XXXXXX")
 ditto "$app" "$staging/LocalFlow.app"
 codesign --verify --deep --strict "$staging/LocalFlow.app"
 if [[ -d "$HOME/Applications/LocalFlow.app" ]]; then
-  backup=$(mktemp -d /tmp/localflow-previous.XXXXXX)
+  backup=$(mktemp -d /tmp/localflow-previous.XXXXXX.noindex)
   mv "$HOME/Applications/LocalFlow.app" "$backup/LocalFlow.app"
 fi
 mv "$staging/LocalFlow.app" "$HOME/Applications/LocalFlow.app"
 rmdir "$staging"
+registrar=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+"$registrar" -u "$PWD/$app" || true
+"$registrar" -f "$HOME/Applications/LocalFlow.app"
 open "$HOME/Applications/LocalFlow.app"

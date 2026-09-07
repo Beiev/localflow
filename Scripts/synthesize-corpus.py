@@ -3,7 +3,7 @@
 import json, subprocess
 from pathlib import Path
 root=Path(__file__).resolve().parent.parent
-output=root/'build/evaluation'
+output=root/'build.noindex/evaluation'
 output.mkdir(parents=True,exist_ok=True)
 items=json.loads((root/'docs/evaluation-corpus.json').read_text())
 for item in items:
