@@ -50,27 +50,37 @@ final class GlobalShortcut {
 }
 @MainActor
 final class TextInsertion {
-    struct Target { let pid: pid_t; let field: AXUIElement }
+    struct Target { let pid: pid_t; let field: AXUIElement? }
     private var target: Target?
     func capture() { target = Self.focused() }
     private static func focused() -> Target? {
         guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
+        // The application element is always known; the focused field may not be
+        // exposed (browsers, terminals), in which case the paste is delivered blind.
+        let base = Target(pid: app.processIdentifier, field: nil)
         let element = AXUIElementCreateApplication(app.processIdentifier)
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXFocusedUIElementAttribute as CFString, &value) == .success, let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        let field = value as! AXUIElement
+        guard AXUIElementCopyAttributeValue(element, kAXFocusedUIElementAttribute as CFString, &value) == .success, let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return base }
+        return Target(pid: app.processIdentifier, field: unsafeBitCast(value, to: AXUIElement.self))
+    }
+    private static func isSecure(_ field: AXUIElement) -> Bool {
         var role: CFTypeRef?
         AXUIElementCopyAttributeValue(field, kAXSubroleAttribute as CFString, &role)
-        guard role as? String != kAXSecureTextFieldSubrole as String else { return nil }
-        return Target(pid: app.processIdentifier, field: field)
+        return role as? String == kAXSecureTextFieldSubrole as String
     }
+    private static func textValue(_ field: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(field, kAXValueAttribute as CFString, &value) == .success else { return nil }
+        return value as? String
+    }
+    /// Pastes into whatever currently holds keyboard focus — that is where the user's
+    /// cursor is. Element identity and roles are deliberately not used as gates: web
+    /// editors and terminals expose unstable accessibility elements. Native fields are
+    /// still verified through their value when they expose one.
     func paste(_ text: String, useCurrentTarget: Bool = false) async -> Bool {
-        guard !text.isEmpty, let current = Self.focused(), let expected = useCurrentTarget ? current : target, current.pid == expected.pid, CFEqual(current.field, expected.field) else { return false }
-        var role: CFTypeRef?
-        AXUIElementCopyAttributeValue(current.field, kAXRoleAttribute as CFString, &role)
-        guard ["AXTextField", "AXTextArea", "AXComboBox"].contains(role as? String ?? "") else { return false }
-        var before: CFTypeRef?
-        AXUIElementCopyAttributeValue(current.field, kAXValueAttribute as CFString, &before)
+        guard !text.isEmpty, let current = Self.focused() else { return false }
+        if let field = current.field, Self.isSecure(field) { return false }
+        let before = current.field.flatMap(Self.textValue) ?? ""
         guard let down = CGEvent(keyboardEventSource: nil, virtualKey: 9, keyDown: true), let up = CGEvent(keyboardEventSource: nil, virtualKey: 9, keyDown: false) else { return false }
         let pasteboard = NSPasteboard.general
         let old = pasteboard.pasteboardItems?.map { item -> NSPasteboardItem in let copy = NSPasteboardItem(); for type in item.types { if let data = item.data(forType: type) { copy.setData(data, forType: type) } }; return copy } ?? []
@@ -78,13 +88,21 @@ final class TextInsertion {
         let count = pasteboard.changeCount
         down.flags = .maskCommand; up.flags = .maskCommand
         down.post(tap: .cghidEventTap); up.post(tap: .cghidEventTap)
-        try? await Task.sleep(for: .milliseconds(350))
+        // Slow applications apply the paste asynchronously; give them time and
+        // stop waiting once the value provably contains the dictated text.
+        let marker = String(text.prefix(80))
+        var applied = false
+        for _ in 0..<8 {
+            try? await Task.sleep(for: .milliseconds(200))
+            if pasteboard.changeCount != count { break }
+            if let value = current.field.flatMap(Self.textValue), value != before, value.contains(marker) { applied = true; break }
+        }
         if pasteboard.changeCount == count { pasteboard.clearContents(); pasteboard.writeObjects(old) }
-        var after: CFTypeRef?
-        AXUIElementCopyAttributeValue(current.field, kAXValueAttribute as CFString, &after)
-        // Keep the result available if the application cannot confirm the insertion.
-        guard let newValue = after as? String else { return false }
-        return newValue != before as? String && newValue.contains(text)
+        if applied { return true }
+        // Fields that expose plain-string values can be checked; everything else
+        // (attributed values, web areas) is trusted once the keystroke was delivered.
+        if let after = current.field.flatMap(Self.textValue) { return after != before && after.contains(marker) }
+        return true
     }
 }
 @MainActor

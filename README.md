@@ -8,7 +8,7 @@ LocalFlow is an open, privacy-first alternative to Wispr Flow built for Apple Si
 
 ## What it does
 
-- **Dictate anywhere (⌘B).** A small floating window shows your words live while you speak — stable text plus a dimmed draft tail. Press ⌘B again: an on-device language model strips fillers and repetitions, fixes punctuation and terms, and the result is inserted into the focused field. Escape cancels. The clipboard is restored after pasting.
+- **Dictate anywhere (⌘B).** A small floating window shows your words live while you speak — stable text plus a dimmed draft tail. Press ⌘B again and the window stays visible while the transcript is finalized and edited on device, then inserts the result at the cursor and dismisses itself. Escape cancels; the clipboard is restored after pasting. If the target field truly cannot receive text, a small fallback panel keeps the result one click away.
 - **Two editing strengths.** *Tidy* removes speech noise while preserving facts, numbers, negations and your tone. *Flowing text* reorganizes a stream of thoughts into coherent paragraphs without inventing anything. A free-form *your style* field tunes both.
 - **Voice notes as a quiet diary page.** Create a note, write a title and a line of context, then dictate into it whenever you're ready. Notes can be extended by voice later.
 - **One-press meeting capture (⌘⇧M).** Records system audio and your microphone as separate tracks, transcribes both, splits speakers post-hoc, and produces a summary with decisions, open questions and clickable timestamps back into the audio.

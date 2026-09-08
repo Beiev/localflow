@@ -242,7 +242,8 @@ final class AppModel: ObservableObject {
     }
     func stop() {
         guard let session = active, !processing, !isStarting else { return }
-        overlay.hide()
+        // The overlay stays visible through processing: the user watches the text
+        // being finalized, and it hides only after the result is inserted.
         currentJobID = session.id
         processing = true; status = "Завершаю расшифровку…"; shortcut.recording = session.kind == .dictation
         liveTask?.cancel(); clockTask?.cancel(); dictationDuringMeeting = nil
@@ -256,6 +257,7 @@ final class AppModel: ObservableObject {
                 try? store.save(saved); if !Task.isCancelled { self.error = error.localizedDescription }; status = "Аудио сохранено · откройте архив для восстановления"
                 if !Task.isCancelled { overlay.showReceipt(model: self) }
             }
+            if session.kind != .dictation { overlay.hide() }
             active = nil; processing = false; shortcut.recording = false; currentJobID = nil; refresh(); await scheduleUnload(); resumeQueued()
         }
     }
@@ -319,15 +321,17 @@ final class AppModel: ObservableObject {
         if needsReview { result.versions.append(TextVersion(mode: .clean, text: finalText, label: "Минимальная очистка")) }
         result.state = "ready"; result.transcribedThrough = nil; result.pendingMode = nil; try store.save(result); refresh(); selection = result.id
         stableText = finalText; draftText = ""; status = "Готово"
-        if insert && !finalText.isEmpty {
-            if await insertion.paste(finalText) {
-                status = needsReview ? "Текст вставлен · минимальная очистка" : "Текст вставлен"
-                if needsReview { overlay.showReceipt(model: self) }
-            } else {
-                status = "Текст готов · поле для вставки изменилось"
-                overlay.showReceipt(model: self)
-            }
-        } else { status = raw.isEmpty ? "Речь не обнаружена" : "Готово" }
+        if insert {
+            if !finalText.isEmpty {
+                if await insertion.paste(finalText) {
+                    status = needsReview ? "Текст вставлен · минимальная очистка" : "Текст вставлен"
+                    if needsReview { overlay.showReceipt(model: self) } else { overlay.hide() }
+                } else {
+                    status = "Текст готов · поле для вставки недоступно"
+                    overlay.showReceipt(model: self)
+                }
+            } else { status = "Речь не обнаружена"; overlay.hide() }
+        } else if raw.isEmpty { status = "Речь не обнаружена" }
 
     }
     private func persistInterruption(_ id: UUID, error: Error) {
