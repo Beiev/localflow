@@ -31,6 +31,8 @@ final class AppModel: ObservableObject {
     @Published var isStarting = false
     @Published var shortcutStatus = "Шорткат выключен"
     @Published var shortcutLastEvent = "Сочетание ещё не нажимали в этом запуске"
+    @Published var dictationLabel = ShortcutSpec.dictationDefault.label
+    @Published var meetingLabel = ShortcutSpec.meetingDefault.label
     @Published var section = "archive"
     let store: Store
     let speech = SpeechEngine()
@@ -87,11 +89,14 @@ final class AppModel: ObservableObject {
         capture.onFrame = { [weak self] frame in Task { @MainActor in self?.receive(frame) } }
         capture.onError = { [weak self] error in Task { @MainActor in self?.error = error; self?.stop() } }
         shortcut.onToggle = { [weak self] in
-            self?.shortcutLastEvent = "Последнее нажатие ⌘B: " + Date().formatted(date: .omitted, time: .standard)
+            self?.shortcutLastEvent = "Последнее нажатие \(self?.dictationLabel ?? "⌘B"): " + Date().formatted(date: .omitted, time: .standard)
             self?.toggleDictation()
         }
         shortcut.onMeeting = { [weak self] in self?.toggleMeeting() }
         shortcut.onCancel = { [weak self] in self?.cancel() }
+        shortcut.dictation = ShortcutSpec.load(key: "dictationShortcut", default: .dictationDefault)
+        shortcut.meeting = ShortcutSpec.load(key: "meetingShortcut", default: .meetingDefault)
+        dictationLabel = shortcut.dictation.label; meetingLabel = shortcut.meeting.label
         shortcut.enabled = UserDefaults.standard.bool(forKey: "shortcutEnabled")
         if shortcut.enabled { _ = shortcut.install() }
         shortcutStatus = shortcut.enabled ? shortcut.permissionStatus : "Шорткат выключен"
@@ -117,9 +122,13 @@ final class AppModel: ObservableObject {
     func showMain() { NSApp.activate(ignoringOtherApps: true); NSApp.windows.first { $0.identifier?.rawValue.hasPrefix("main-") == true || $0.title == "LocalFlow" }?.makeKeyAndOrderFront(nil) }
     func refreshShortcut() {
         shortcut.enabled = UserDefaults.standard.bool(forKey: "shortcutEnabled")
+        shortcut.dictation = ShortcutSpec.load(key: "dictationShortcut", default: .dictationDefault)
+        shortcut.meeting = ShortcutSpec.load(key: "meetingShortcut", default: .meetingDefault)
+        dictationLabel = shortcut.dictation.label; meetingLabel = shortcut.meeting.label
         if shortcut.enabled { _ = shortcut.install() }
         shortcutStatus = shortcut.enabled ? shortcut.permissionStatus : "Шорткат выключен"
     }
+    func setShortcutSuspended(_ value: Bool) { shortcut.suspended = value }
     func enableShortcut() {
         UserDefaults.standard.set(true, forKey: "shortcutEnabled")
         refreshShortcut()

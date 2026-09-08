@@ -22,7 +22,7 @@ struct OverlayView: View {
             LiveTranscriptView(stable: model.stableText.isEmpty && model.draftText.isEmpty ? (model.processing ? "Готовлю текст…" : "Говорите — слова появятся здесь") : model.stableText, draft: model.draftText)
                 .frame(height: 82)
             HStack {
-                Text("⌘B").font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 6).padding(.vertical, 3).background(.quaternary, in: Capsule())
+                Text(model.dictationLabel).font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 6).padding(.vertical, 3).background(.quaternary, in: Capsule())
                 Spacer()
                 if model.isRecording {
                     if model.active?.kind != .dictation { Button(model.paused ? "Продолжить" : "Пауза") { model.pause() } }
@@ -60,14 +60,14 @@ struct MainView: View {
                         Image(systemName: "mic.fill")
                         Text("Диктовать")
                         Spacer()
-                        Text("⌘B").font(.caption).foregroundStyle(.white.opacity(0.75)).padding(.horizontal, 7).padding(.vertical, 3).background(.white.opacity(0.18), in: Capsule())
+                        Text(model.dictationLabel).font(.caption).foregroundStyle(.white.opacity(0.75)).padding(.horizontal, 7).padding(.vertical, 3).background(.white.opacity(0.18), in: Capsule())
                     }.font(.body.weight(.semibold)).padding(.vertical, 10).padding(.horizontal, 14)
                 }
                 .buttonStyle(.borderedProminent).tint(FlowTheme.accent)
                 .disabled(model.isRecording || model.processing || model.isStarting)
                 VStack(spacing: 2) {
                     sideAction("Новая заметка", "square.and.pencil") { model.createNote(); model.section = "archive" }
-                    sideAction("Записать созвон · ⌘⇧M", "person.2.wave.2") { model.toggleMeeting() }
+                    sideAction("Записать созвон · \(model.meetingLabel)", "person.2.wave.2") { model.toggleMeeting() }
                     sideAction("Импорт аудио", "square.and.arrow.down") { model.importAudio() }
                 }.buttonStyle(.plain).disabled(model.isRecording || model.processing || model.isStarting)
                 Divider()

@@ -2,6 +2,80 @@ import SwiftUI
 import AppKit
 import LocalFlowCore
 
+/// Captures the next key combination typed into the settings window.
+/// The global tap is suspended while recording so the old shortcut does not fire.
+@MainActor
+final class ShortcutRecorder: ObservableObject {
+    @Published var activeKey: String?
+    @Published var message: String?
+    private var monitor: Any?
+    private var model: AppModel?
+    func begin(key: String, model: AppModel, validate: @escaping (ShortcutSpec) -> String?, commit: @escaping (ShortcutSpec) -> Void) {
+        end()
+        self.model = model
+        activeKey = key; message = nil
+        model.setShortcutSuspended(true)
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self else { return event }
+                if event.keyCode == 53 { self.end(); return event }
+                let spec = ShortcutSpec(keyCode: Int64(event.keyCode), flags: UInt64(event.modifierFlags.rawValue))
+                if let error = validate(spec) { self.message = error; return event }
+                commit(spec); self.end()
+                return event
+            }
+        }
+    }
+    func end() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil; activeKey = nil
+        model?.setShortcutSuspended(false)
+    }
+}
+
+private struct ShortcutRow: View {
+    @ObservedObject var model: AppModel
+    @ObservedObject var recorder: ShortcutRecorder
+    let title: String
+    let storageKey: String
+    let defaultSpec: ShortcutSpec
+    private var spec: ShortcutSpec { ShortcutSpec.load(key: storageKey, default: defaultSpec) }
+    private var recording: Bool { recorder.activeKey == storageKey }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                Text(title)
+                Spacer()
+                if recording {
+                    Text("Нажмите сочетание…").foregroundStyle(FlowTheme.accent)
+                    Button("Отменить") { recorder.end() }
+                } else {
+                    Text(spec.label)
+                        .font(.system(size: 13, weight: .medium)).monospaced()
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 6))
+                    Button("Изменить") { begin() }
+                    if spec != defaultSpec { Button("Сбросить") { ShortcutSpec.reset(key: storageKey); model.refreshShortcut() } }
+                }
+            }
+            if recording { Text("Esc — выйти без изменений.").font(.caption).foregroundStyle(.secondary) }
+        }
+    }
+    private func begin() {
+        let otherKey = storageKey == "dictationShortcut" ? "meetingShortcut" : "dictationShortcut"
+        let other = ShortcutSpec.load(key: otherKey, default: storageKey == "dictationShortcut" ? .meetingDefault : .dictationDefault)
+        recorder.begin(key: storageKey, model: model, validate: { spec in
+            if !spec.isValidChoice { return "Добавьте модификатор (⌘ ⌥ ⌃ ⇧) или выберите клавишу F1–F20." }
+            if spec.isSystemCritical { return "Это сочетание нужно приложениям (копировать, вставить, закрыть окно). Выберите другое." }
+            if spec == other { return "Уже занято другим действием." }
+            return nil
+        }, commit: { spec in
+            spec.save(key: storageKey)
+            model.refreshShortcut()
+        })
+    }
+}
+
 struct SettingsView: View {
     @ObservedObject var model: AppModel
     @AppStorage("asrIdleSeconds") private var asrIdle = 120
@@ -11,6 +85,7 @@ struct SettingsView: View {
     @AppStorage("editingStyle") private var editingStyle = ""
     @AppStorage("editorModel") private var editorModel = "editor"
     @AppStorage("settingsPage") private var page = "general"
+    @StateObject private var recorder = ShortcutRecorder()
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -27,6 +102,8 @@ struct SettingsView: View {
                 .padding(28).frame(maxWidth: .infinity)
         }.navigationTitle("Настройки")
             .onAppear { model.refresh(); model.refreshShortcut() }
+            .onDisappear { recorder.end() }
+            .onChange(of: page) { _, _ in recorder.end() }
     }
     private func card<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -40,9 +117,13 @@ struct SettingsView: View {
             card("Запись") {
                 Toggle("Глобальные сочетания клавиш", isOn: $shortcutEnabled)
                     .toggleStyle(.switch).onChange(of: shortcutEnabled) { _, _ in model.refreshShortcut() }
-                HStack { Text("Диктовка"); Spacer(); Text("⌘B").foregroundStyle(.secondary) }
-                HStack { Text("Созвон"); Spacer(); Text("⌘⇧M").foregroundStyle(.secondary) }
-                Text("Повторное нажатие завершает запись. Esc — отмена.").foregroundStyle(.secondary)
+                ShortcutRow(model: model, recorder: recorder, title: "Диктовка", storageKey: "dictationShortcut", defaultSpec: .dictationDefault)
+                ShortcutRow(model: model, recorder: recorder, title: "Созвон", storageKey: "meetingShortcut", defaultSpec: .meetingDefault)
+                if let message = recorder.message {
+                    Text(message).font(.caption).foregroundStyle(.orange)
+                }
+                HStack { Text("Отмена записи"); Spacer(); Text("Esc").foregroundStyle(.secondary) }
+                Text("Повторное нажатие завершает запись; Esc отменяет. Сочетания с ⌘ срабатывают только с левого ⌘, чтобы правый ⌘ продолжал работать в приложениях.").foregroundStyle(.secondary)
                 Divider()
                 Text("Созвоны: системный звук и отдельная дорожка микрофона. Shure MV7+ выбирается автоматически, когда подключён.").foregroundStyle(.secondary)
             }

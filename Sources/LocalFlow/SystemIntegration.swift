@@ -11,6 +11,10 @@ final class GlobalShortcut {
     var onCancel: (() -> Void)?
     var recording = false
     var enabled = false
+    /// While the user records a new combination in Settings, events pass through.
+    var suspended = false
+    var dictation = ShortcutSpec.dictationDefault
+    var meeting = ShortcutSpec.meetingDefault
     var isInstalled: Bool { tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false }
     var permissionStatus: String {
         let trusted = AXIsProcessTrusted()
@@ -29,12 +33,12 @@ final class GlobalShortcut {
             let owner = Unmanaged<GlobalShortcut>.fromOpaque(context).takeUnretainedValue()
             return MainActor.assumeIsolated {
                 if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput { if let tap = owner.tap { CGEvent.tapEnable(tap: tap, enable: true) }; return Unmanaged.passUnretained(event) }
-                guard owner.enabled else { return Unmanaged.passUnretained(event) }
+                guard owner.enabled, !owner.suspended else { return Unmanaged.passUnretained(event) }
                 let key = event.getIntegerValueField(.keyboardEventKeycode)
-                if ShortcutChord.isLeftCommandB(keyCode: key, flags: event.flags.rawValue) {
+                if owner.dictation.matches(keyCode: key, rawFlags: event.flags.rawValue) {
                     if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 { Task { @MainActor in owner.onToggle?() } }; return nil
                 }
-                if ShortcutChord.isMeeting(keyCode: key, flags: event.flags.rawValue) {
+                if owner.meeting.matches(keyCode: key, rawFlags: event.flags.rawValue) {
                     if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 { Task { @MainActor in owner.onMeeting?() } }; return nil
                 }
                 if key == 53 && owner.recording { Task { @MainActor in owner.onCancel?() }; return nil }

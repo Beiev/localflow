@@ -62,8 +62,8 @@ private struct StatusMenu: View {
     @ObservedObject var model: AppModel
     var body: some View {
         Text(model.status)
-        Button(model.isRecording ? "Завершить диктовку · ⌘B" : "Диктовать · ⌘B") { model.toggleDictation() }.disabled(model.processing || model.isStarting)
-        Button(model.active?.kind == .meeting && model.isRecording ? "Завершить созвон · ⌘⇧M" : "Записать созвон · ⌘⇧M") { model.toggleMeeting() }.disabled(model.processing || (model.isRecording && model.active?.kind != .meeting))
+        Button(model.isRecording ? "Завершить диктовку · \(model.dictationLabel)" : "Диктовать · \(model.dictationLabel)") { model.toggleDictation() }.disabled(model.processing || model.isStarting)
+        Button(model.active?.kind == .meeting && model.isRecording ? "Завершить созвон · \(model.meetingLabel)" : "Записать созвон · \(model.meetingLabel)") { model.toggleMeeting() }.disabled(model.processing || (model.isRecording && model.active?.kind != .meeting))
         Button("Новая заметка") { model.createNote() }.disabled(model.isRecording || model.processing)
         if model.isRecording || model.processing { Button("Отменить · Esc") { model.cancel() } }
         Divider()

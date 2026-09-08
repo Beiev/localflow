@@ -20,10 +20,38 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(delivered.contains("Эээ"))
         XCTAssertEqual(TextSafety.deliveryText(original: original, edited: nil, requiresReview: false, dictionary: []), delivered)
     }
-    func testMeetingShortcutIsDistinctFromDictation() {
-        XCTAssertTrue(ShortcutChord.isMeeting(keyCode: 46, flags: (1 << 20) | (1 << 17) | 0x8))
-        XCTAssertFalse(ShortcutChord.isMeeting(keyCode: 46, flags: (1 << 20) | 0x8))
-        XCTAssertFalse(ShortcutChord.isLeftCommandB(keyCode: 11, flags: (1 << 20) | (1 << 17) | 0x8))
+    func testShortcutSpecMatchesExactModifiersAndLeftCommand() {
+        XCTAssertTrue(ShortcutSpec.dictationDefault.matches(keyCode: 11, rawFlags: ShortcutSpec.command | 0x8))
+        XCTAssertFalse(ShortcutSpec.dictationDefault.matches(keyCode: 11, rawFlags: ShortcutSpec.command | 0x10))
+        XCTAssertFalse(ShortcutSpec.dictationDefault.matches(keyCode: 11, rawFlags: ShortcutSpec.command | ShortcutSpec.shift | 0x8))
+        XCTAssertFalse(ShortcutSpec.dictationDefault.matches(keyCode: 11, rawFlags: ShortcutSpec.command | ShortcutSpec.control | 0x8))
+        XCTAssertFalse(ShortcutSpec.dictationDefault.matches(keyCode: 11, rawFlags: ShortcutSpec.command | ShortcutSpec.option | 0x8))
+        XCTAssertFalse(ShortcutSpec.dictationDefault.matches(keyCode: 8, rawFlags: ShortcutSpec.command | 0x8))
+        XCTAssertFalse(ShortcutSpec.dictationDefault.matches(keyCode: 11, rawFlags: 0x8))
+        XCTAssertTrue(ShortcutSpec.meetingDefault.matches(keyCode: 46, rawFlags: ShortcutSpec.command | ShortcutSpec.shift | 0x8))
+        XCTAssertFalse(ShortcutSpec.meetingDefault.matches(keyCode: 46, rawFlags: ShortcutSpec.command | 0x8))
+        // Shortcuts without ⌘ fire with either physical side of their modifiers.
+        let option = ShortcutSpec(keyCode: 3, flags: ShortcutSpec.option)
+        XCTAssertTrue(option.matches(keyCode: 3, rawFlags: ShortcutSpec.option))
+        XCTAssertTrue(option.matches(keyCode: 3, rawFlags: ShortcutSpec.option | 0x20))
+        XCTAssertNotEqual(ShortcutSpec.dictationDefault, ShortcutSpec.meetingDefault)
+    }
+    func testShortcutSpecLabelsValidationAndStorage() {
+        XCTAssertEqual(ShortcutSpec.dictationDefault.label, "⌘B")
+        XCTAssertEqual(ShortcutSpec.meetingDefault.label, "⇧⌘M")
+        XCTAssertEqual(ShortcutSpec(keyCode: 3, flags: ShortcutSpec.option | ShortcutSpec.shift).label, "⌥⇧F")
+        XCTAssertEqual(ShortcutSpec(keyCode: 96, flags: 0).label, "F5")
+        XCTAssertEqual(ShortcutSpec(keyCode: 3, flags: ShortcutSpec.control | ShortcutSpec.option | ShortcutSpec.shift | ShortcutSpec.command).label, "⌃⌥⇧⌘F")
+        XCTAssertTrue(ShortcutSpec(keyCode: 96, flags: 0).isValidChoice)
+        XCTAssertFalse(ShortcutSpec(keyCode: 11, flags: 0).isValidChoice)
+        XCTAssertTrue(ShortcutSpec(keyCode: 8, flags: ShortcutSpec.command).isSystemCritical)
+        XCTAssertFalse(ShortcutSpec(keyCode: 8, flags: ShortcutSpec.command | ShortcutSpec.shift).isSystemCritical)
+        XCTAssertFalse(ShortcutSpec(keyCode: 11, flags: ShortcutSpec.command).isSystemCritical)
+        let key = "shortcutSpecTestStorage"
+        ShortcutSpec(keyCode: 122, flags: ShortcutSpec.option).save(key: key)
+        XCTAssertEqual(ShortcutSpec.load(key: key, default: .dictationDefault), ShortcutSpec(keyCode: 122, flags: ShortcutSpec.option))
+        ShortcutSpec.reset(key: key)
+        XCTAssertEqual(ShortcutSpec.load(key: key, default: .dictationDefault), .dictationDefault)
     }
     func testDraftNoteStartsWithoutRecordingAndKeepsDescription() throws {
         let note = RecordingSession.draftNote()
@@ -83,16 +111,6 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(TextSafety.hasValidCitations("Бюджет 5000 [1] [02:00]", evidence: evidence))
         XCTAssertFalse(TextSafety.hasValidCitations("Бюджет 5000", evidence: evidence))
     }
-    func testShortcutUsesLeftCommandFromEvent() {
-        XCTAssertTrue(ShortcutChord.isLeftCommandB(keyCode: 11, flags: (1 << 20) | 0x8))
-        XCTAssertFalse(ShortcutChord.isLeftCommandB(keyCode: 11, flags: (1 << 20) | 0x10))
-        XCTAssertFalse(ShortcutChord.isLeftCommandB(keyCode: 11, flags: 0x8))
-        XCTAssertFalse(ShortcutChord.isLeftCommandB(keyCode: 8, flags: (1 << 20) | 0x8))
-        for modifier: UInt64 in [1 << 17, 1 << 18, 1 << 19] {
-            XCTAssertFalse(ShortcutChord.isLeftCommandB(keyCode: 11, flags: (1 << 20) | 0x8 | modifier))
-        }
-    }
-
     func testOverlappingWindowsOwnBoundaryWordExactlyOnce() {
         let first = [TranscriptSegment(start: 6.7, end: 7.3, text: "граница")]
         let second = [TranscriptSegment(start: 0.7, end: 1.3, text: "граница")]

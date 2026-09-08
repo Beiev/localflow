@@ -132,18 +132,6 @@ public enum TranscriptAssembly {
     }
 }
 
-/// Device-specific command bits are supplied with the key event (IOLLEvent.h).
-/// Do not poll global keyboard state: that has separate Input Monitoring semantics.
-public enum ShortcutChord {
-    public static func isMeeting(keyCode: Int64, flags: UInt64) -> Bool {
-        let required: UInt64 = (1 << 20) | (1 << 17) | 0x8 // left Cmd + Shift + M
-        return keyCode == 46 && flags & required == required && flags & ((1 << 18) | (1 << 19)) == 0
-    }
-
-    public static func isLeftCommandB(keyCode: Int64, flags: UInt64) -> Bool {
-        let command: UInt64 = 1 << 20
-        let leftCommand: UInt64 = 0x8
-        let conflicting: UInt64 = (1 << 17) | (1 << 18) | (1 << 19) // shift/control/option
-        return keyCode == 11 && flags & command != 0 && flags & leftCommand != 0 && flags & conflicting == 0
-    }
-}
+// Global shortcut matching lives in ShortcutSpec (Shortcut.swift).
+// Device-specific command bits are supplied with the key event (IOLLEvent.h);
+// never poll global keyboard state: that has separate Input Monitoring semantics.
