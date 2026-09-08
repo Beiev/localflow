@@ -85,3 +85,13 @@ struct SectionHeader: View {
         }
     }
 }
+
+extension Int {
+    /// Russian plural form for "слово" (1 слово, 2 слова, 5 слов).
+    var ruWordForm: String {
+        let mod10 = abs(self) % 10, mod100 = abs(self) % 100
+        if mod10 == 1 && mod100 != 11 { return "слово" }
+        if (2...4).contains(mod10) && !(12...14).contains(mod100) { return "слова" }
+        return "слов"
+    }
+}

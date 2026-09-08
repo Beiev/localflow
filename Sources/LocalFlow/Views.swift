@@ -6,21 +6,27 @@ import LocalFlowCore
 
 struct OverlayView: View {
     @ObservedObject var model: AppModel
+    private var wordCount: Int { (model.stableText + " " + model.draftText).split(whereSeparator: \.isWhitespace).filter { !$0.isEmpty }.count }
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 if model.isRecording { PulsingDot(color: .red) }
                 else if model.processing { ProgressView().controlSize(.mini) }
                 else { Circle().fill(.green).frame(width: 8, height: 8) }
                 Text(model.status).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                if model.isRecording && wordCount > 0 {
+                    Text("\(wordCount) \(wordCount.ruWordForm)").font(.caption2).foregroundStyle(.tertiary)
+                }
                 Spacer()
                 Text(Duration.seconds(model.elapsed).formatted(.time(pattern: .minuteSecond))).monospacedDigit().font(.caption).foregroundStyle(.secondary)
                 Button { model.showMain() } label: { Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 11)) }.help("Развернуть")
                 Button { if model.isRecording && model.active?.kind != .meeting { model.stop() } else { model.overlay.hide() } } label: { Image(systemName: "xmark").font(.system(size: 11)) }.help("Завершить диктовку и скрыть окно")
             }
             .foregroundStyle(.secondary)
+            // The transcript flexes with the window: small overlay shows a couple of
+            // lines, a stretched one shows the whole dictation.
             LiveTranscriptView(stable: model.stableText.isEmpty && model.draftText.isEmpty ? (model.processing ? "Готовлю текст…" : "Говорите — слова появятся здесь") : model.stableText, draft: model.draftText)
-                .frame(height: 82)
+                .frame(minHeight: 64, maxHeight: .infinity, alignment: .top)
             HStack {
                 Text(model.dictationLabel).font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 6).padding(.vertical, 3).background(.quaternary, in: Capsule())
                 Spacer()
@@ -36,8 +42,14 @@ struct OverlayView: View {
                 }
             }.font(.caption)
         }
-        .buttonStyle(.plain).padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .buttonStyle(.plain).padding(14)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: FlowTheme.overlayRadius))
+        .overlay(alignment: .top) {
+            Capsule().fill(LinearGradient(colors: [FlowTheme.accent.opacity(0.85), .teal.opacity(0.85)], startPoint: .leading, endPoint: .trailing))
+                .frame(height: 2.5).padding(.horizontal, 16).padding(.top, 7)
+                .allowsHitTesting(false)
+        }
         .overlay(RoundedRectangle(cornerRadius: FlowTheme.overlayRadius).strokeBorder(.white.opacity(0.15)))
         .padding(3)
     }

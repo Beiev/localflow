@@ -116,16 +116,26 @@ final class OverlayController: NSObject, NSWindowDelegate {
     func show(model: AppModel) {
         receiptTask?.cancel()
         if panel == nil {
-            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 460, height: 204), styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
+            // Titled + fullSizeContentView + transparent titlebar keeps the borderless
+            // look while unlocking native edge/corner resizing for the user.
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 460, height: 204), styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView, .resizable], backing: .buffered, defer: false)
+            panel.titlebarAppearsTransparent = true
+            panel.titleVisibility = .hidden
+            for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] { panel.standardWindowButton(button)?.isHidden = true }
             panel.level = .floating; panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             panel.isFloatingPanel = true; panel.hidesOnDeactivate = false; panel.isMovableByWindowBackground = true
+            panel.contentMinSize = NSSize(width: 360, height: 190)
+            panel.contentMaxSize = NSSize(width: 1280, height: 900)
             panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = true; panel.delegate = self
+            if let size = UserDefaults.standard.string(forKey: "overlaySize").map(NSSizeFromString), size.width >= panel.contentMinSize.width, size.height >= panel.contentMinSize.height {
+                panel.setFrame(NSRect(origin: .zero, size: size), display: false)
+            }
             panel.contentView = NSHostingView(rootView: OverlayView(model: model))
             self.panel = panel
         }
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main!
         let saved = UserDefaults.standard.string(forKey: "overlayOrigin").map(NSPointFromString)
-        let origin = saved.flatMap { p in NSScreen.screens.contains { $0.visibleFrame.contains(NSRect(origin: p, size: panel!.frame.size)) } ? p : nil } ?? NSPoint(x: screen.visibleFrame.midX - 230, y: screen.visibleFrame.minY + 32)
+        let origin = saved.flatMap { p in NSScreen.screens.contains { $0.visibleFrame.contains(NSRect(origin: p, size: panel!.frame.size)) } ? p : nil } ?? NSPoint(x: screen.visibleFrame.midX - panel!.frame.width / 2, y: screen.visibleFrame.minY + 32)
         panel?.setFrameOrigin(origin); panel?.orderFrontRegardless()
     }
     func showReceipt(model: AppModel) {
@@ -134,5 +144,6 @@ final class OverlayController: NSObject, NSWindowDelegate {
     }
     func hide() { receiptTask?.cancel(); panel?.orderOut(nil) }
     func windowDidMove(_ notification: Notification) { if let panel { UserDefaults.standard.set(NSStringFromPoint(panel.frame.origin), forKey: "overlayOrigin") } }
+    func windowDidResize(_ notification: Notification) { if let panel { UserDefaults.standard.set(NSStringFromSize(panel.frame.size), forKey: "overlaySize") } }
 }
 import SwiftUI
