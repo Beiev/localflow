@@ -60,17 +60,23 @@ struct KindBadge: View {
     }
 }
 
-/// Breathing dot that marks an active recording.
-struct PulsingDot: View {
+/// Live voice-level bars driven by the audio meter. Recent history sits at the
+/// trailing edge; louder speech raises and brightens the bars.
+struct VoiceWaveform: View {
+    let levels: [Double]
     var color: Color = .red
-    @State private var pulsing = false
     var body: some View {
-        ZStack {
-            Circle().fill(color.opacity(0.35)).frame(width: 14, height: 14).scaleEffect(pulsing ? 1.35 : 0.7).opacity(pulsing ? 0 : 1)
-            Circle().fill(color).frame(width: 8, height: 8)
-        }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) { pulsing = true }
+        GeometryReader { proxy in
+            let capacity = max(8, Int(proxy.size.width / 5))
+            let visible = levels.suffix(capacity)
+            HStack(alignment: .center, spacing: 2) {
+                ForEach(Array(visible.enumerated()), id: \.offset) { _, level in
+                    Capsule()
+                        .fill(color.opacity(0.3 + 0.7 * CGFloat(min(1, max(0.05, level)))))
+                        .frame(width: 3, height: 3 + 16 * CGFloat(min(1, max(0.04, level))))
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
         }
     }
 }

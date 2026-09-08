@@ -10,12 +10,10 @@ struct OverlayView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                if model.isRecording { PulsingDot(color: .red) }
-                else if model.processing { ProgressView().controlSize(.mini) }
-                else { Circle().fill(.green).frame(width: 8, height: 8) }
-                Text(model.status).font(.system(size: 11, weight: .medium)).lineLimit(1)
+                if model.processing { ProgressView().controlSize(.mini) }
+                Text(model.status).font(.system(size: 11, weight: .medium)).lineLimit(1).layoutPriority(1)
                 if model.isRecording && wordCount > 0 {
-                    Text("\(wordCount) \(wordCount.ruWordForm)").font(.caption2).foregroundStyle(.tertiary)
+                    Text("\(wordCount) \(wordCount.ruWordForm)").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 }
                 Spacer()
                 Text(Duration.seconds(model.elapsed).formatted(.time(pattern: .minuteSecond))).monospacedDigit().font(.caption).foregroundStyle(.secondary)
@@ -23,10 +21,15 @@ struct OverlayView: View {
                 Button { if model.isRecording && model.active?.kind != .meeting { model.stop() } else { model.overlay.hide() } } label: { Image(systemName: "xmark").font(.system(size: 11)) }.help("Завершить диктовку и скрыть окно")
             }
             .foregroundStyle(.secondary)
+            if model.isRecording || model.processing {
+                VoiceWaveform(levels: model.waveform, color: model.isRecording ? .red : FlowTheme.accent)
+                    .frame(height: 20)
+                    .opacity(model.isRecording ? 1 : 0.35)
+            }
             // The transcript flexes with the window: small overlay shows a couple of
             // lines, a stretched one shows the whole dictation.
             LiveTranscriptView(stable: model.stableText.isEmpty && model.draftText.isEmpty ? (model.processing ? "Готовлю текст…" : "Говорите — слова появятся здесь") : model.stableText, draft: model.draftText)
-                .frame(minHeight: 64, maxHeight: .infinity, alignment: .top)
+                .frame(minHeight: 44, maxHeight: .infinity, alignment: .top)
             HStack {
                 Text(model.dictationLabel).font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 6).padding(.vertical, 3).background(.quaternary, in: Capsule())
                 Spacer()
@@ -45,13 +48,9 @@ struct OverlayView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .buttonStyle(.plain).padding(14)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: FlowTheme.overlayRadius))
-        .overlay(alignment: .top) {
-            Capsule().fill(LinearGradient(colors: [FlowTheme.accent.opacity(0.85), .teal.opacity(0.85)], startPoint: .leading, endPoint: .trailing))
-                .frame(height: 2.5).padding(.horizontal, 16).padding(.top, 7)
-                .allowsHitTesting(false)
-        }
         .overlay(RoundedRectangle(cornerRadius: FlowTheme.overlayRadius).strokeBorder(.white.opacity(0.15)))
         .padding(3)
+        .animation(.easeInOut(duration: 0.2), value: model.isRecording)
     }
 }
 
@@ -120,7 +119,7 @@ struct MainView: View {
     private var recordingBar: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                if model.processing { Image(systemName: "sparkles").foregroundStyle(FlowTheme.accent) } else { PulsingDot(color: .red) }
+                if model.processing { Image(systemName: "sparkles").foregroundStyle(FlowTheme.accent) }
                 Text(model.status).fontWeight(.medium)
                 Spacer()
                 Text(Duration.seconds(model.elapsed).formatted(.time(pattern: .minuteSecond))).monospacedDigit()
@@ -129,6 +128,9 @@ struct MainView: View {
                     Button(model.paused ? "Продолжить" : "Пауза") { model.pause() }
                     Button("Завершить") { model.stop() }.buttonStyle(.borderedProminent)
                 }
+            }
+            if model.isRecording {
+                VoiceWaveform(levels: model.waveform, color: .red).frame(height: 20)
             }
             LiveTranscriptView(stable: model.liveSegments.suffix(50).map { $0.text }.joined(separator: "\n"), draft: model.liveTails.keys.sorted().compactMap { model.liveTails[$0] }.joined(separator: "\n"), fontSize: 14)
                 .frame(height: 140)

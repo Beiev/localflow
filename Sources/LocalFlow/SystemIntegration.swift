@@ -124,7 +124,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
             for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] { panel.standardWindowButton(button)?.isHidden = true }
             panel.level = .floating; panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             panel.isFloatingPanel = true; panel.hidesOnDeactivate = false; panel.isMovableByWindowBackground = true
-            panel.contentMinSize = NSSize(width: 360, height: 190)
+            panel.contentMinSize = NSSize(width: 380, height: 216)
             panel.contentMaxSize = NSSize(width: 1280, height: 900)
             panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = true; panel.delegate = self
             if let size = UserDefaults.standard.string(forKey: "overlaySize").map(NSSizeFromString), size.width >= panel.contentMinSize.width, size.height >= panel.contentMinSize.height {

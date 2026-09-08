@@ -14,6 +14,8 @@ final class AppModel: ObservableObject {
     @Published var draftText = ""
     @Published var liveSegments: [TranscriptSegment] = []
     @Published var liveTails: [String: String] = [:]
+    @Published var waveform: [Double] = []
+    private var audioLevel: Double = 0
     @Published var elapsed: Double = 0
     @Published var paused = false
     @Published var processing = false
@@ -177,6 +179,7 @@ final class AppModel: ObservableObject {
                 try store.save(session)
                 active = session; selection = session.id; buffers = [:]; hypotheses = [:]; committed = session.segments; nextWindowStart = [:]
                 stableText = ""; draftText = ""; liveSegments = []; liveTails = [:]; finalText = ""; elapsed = session.duration; paused = false; startDate = Date().addingTimeInterval(-session.duration)
+                waveform = []; audioLevel = 0
                 status = "Запускаю микрофон…"; if kind != .note { overlay.show(model: self) }
                 try await capture.start(id: session.id, captureSystemAudio: kind == .meeting, append: existing != nil && FileManager.default.fileExists(atPath: AppPaths.audio(session.id).appendingPathComponent("parts.json").path))
                 shortcut.recording = true; status = "Слушаю…"; if kind != .note { overlay.show(model: self) }
@@ -201,6 +204,7 @@ final class AppModel: ObservableObject {
     }
     private func receive(_ frame: AudioFrame) {
         guard active != nil, !processing else { return }
+        if frame.source == "microphone" { meter(frame.samples) }
         if var old = buffers[frame.source], frame.start - old.start - Double(old.samples.count)/16000 < 0.5 {
             old.samples.append(contentsOf: frame.samples)
             let excess = old.samples.count - 12 * 16000
@@ -245,6 +249,17 @@ final class AppModel: ObservableObject {
             } catch { guard !Task.isCancelled else { return }; status = "Аудио сохраняется; расшифровку можно повторить"; self.error = error.localizedDescription; return }
         }
     }
+    /// Voice-level meter for the overlay waveform. Fast attack, slow release,
+    /// square-root compression so quiet speech still moves the bars.
+    private func meter(_ samples: [Float]) {
+        guard !samples.isEmpty else { return }
+        let sum = Double(samples.reduce(Float(0)) { $0 + $1 * $1 })
+        let rms = sqrt(sum / Double(samples.count))
+        let target = min(1, sqrt(max(0, rms) / 0.15))
+        audioLevel = max(target, audioLevel * 0.75)
+        waveform.append(audioLevel)
+        if waveform.count > 120 { waveform.removeFirst(waveform.count - 120) }
+    }
     func pause() {
         paused.toggle(); capture.setPaused(paused); status = paused ? "Пауза" : "Слушаю…"
         if paused { Task { await scheduleUnload() } }
@@ -284,6 +299,7 @@ final class AppModel: ObservableObject {
     }
     func cancel() {
         overlay.hide()
+        waveform = []; audioLevel = 0
         if dictationDuringMeeting != nil { dictationDuringMeeting = nil; status = "Созвон продолжается"; return }
         guard active != nil || processing else { overlay.hide(); return }
         liveTask?.cancel(); clockTask?.cancel(); processingTask?.cancel(); shortcut.recording = false
