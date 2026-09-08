@@ -4,17 +4,17 @@ import LocalFlowCore
 
 struct SettingsView: View {
     @ObservedObject var model: AppModel
-    @AppStorage("compactASR") private var compact = false
     @AppStorage("asrIdleSeconds") private var asrIdle = 120
     @AppStorage("editorIdleSeconds") private var editorIdle = 60
     @AppStorage("shortcutEnabled") private var shortcutEnabled = false
     @AppStorage("editingMode") private var editingMode = "clean"
     @AppStorage("editingStyle") private var editingStyle = ""
-    @State private var page = "general"
+    @AppStorage("editorModel") private var editorModel = "editor"
+    @AppStorage("settingsPage") private var page = "general"
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                Text("Настройки").font(.title2.bold())
+                SectionHeader(title: "Настройки", subtitle: "Поведение записи, модели и диагностика — всё локально.")
                 Picker("Раздел настроек", selection: $page) {
                     Text("Основные").tag("general")
                     Text("Модели").tag("models")
@@ -92,9 +92,12 @@ struct SettingsView: View {
                     if let progress = model.downloadProgress[package.id] { ProgressView(value: min(1, progress)) }
                 }
             }
-            card("Распознавание") {
-                Toggle("Компактная модель (4-bit)", isOn: $compact).toggleStyle(.switch).disabled(model.isRecording || model.processing)
-                Text("Меньше места на диске; точность может снизиться. По умолчанию — 8-bit.").foregroundStyle(.secondary)
+            card("Модель редактирования") {
+                Picker("Модель редактирования", selection: $editorModel) {
+                    Text("Gemma 4 E2B · быстрая").tag("editor")
+                    Text("Qwen 4B · точная").tag("editor-qwen")
+                }.pickerStyle(.segmented).labelsHidden().disabled(model.isRecording || model.processing)
+                Text("Gemma 4 E2B вдвое быстрее и прошла отбор на точность; Qwen 4B — запасной вариант.").foregroundStyle(.secondary)
             }
         }
     }

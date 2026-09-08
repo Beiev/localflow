@@ -12,10 +12,15 @@ struct DiaryView: View {
     private var current: RecordingSession { model.sessions.first { $0.id == session.id } ?? session }
     private var busy: Bool { model.isRecording || model.processing || model.isStarting }
     private var content: String { current.versions.last?.text ?? current.rawText }
+    private var wordCount: Int { content.split(whereSeparator: \.isWhitespace).count }
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                Text(current.createdAt.formatted(date: .complete, time: .omitted)).font(.caption).foregroundStyle(.secondary)
+                HStack {
+                    Text(current.createdAt.formatted(date: .complete, time: .omitted)).font(.caption).foregroundStyle(.secondary)
+                    if wordCount > 0 { Text("· \(wordCount) слов").font(.caption).foregroundStyle(.secondary) }
+                    Spacer()
+                }
                 TextField("Название заметки", text: Binding(get: { current.title }, set: { var note = current; note.title = $0; model.save(note) }))
                     .font(.title.bold()).textFieldStyle(.plain).disabled(busy)
                 TextField("О чём хотите рассказать? Короткое описание — необязательно", text: Binding(get: { current.noteDescription ?? "" }, set: { var note = current; note.noteDescription = $0; model.save(note) }), axis: .vertical)
@@ -24,7 +29,7 @@ struct DiaryView: View {
                     HStack {
                         Button { model.startNote(current) } label: {
                             Label(current.duration > 0 ? "Дополнить голосом" : "Начать диктовку", systemImage: "mic.fill")
-                        }.buttonStyle(.borderedProminent).disabled(editing)
+                        }.buttonStyle(.borderedProminent).tint(FlowTheme.accent).disabled(editing)
                         Text("Режим: " + model.defaultEditingMode.title).font(.caption).foregroundStyle(.secondary)
                         Spacer()
                         Menu {
@@ -49,12 +54,14 @@ struct DiaryView: View {
                     if current.state == "interrupted" { Button("Продолжить обработку") { model.retry(current) }.disabled(busy) }
                 }
                 if editing {
-                    TextEditor(text: $text).font(.body).frame(minHeight: 320)
-                    HStack {
-                        Button("Отмена") { editing = false }
-                        Button("Сохранить текст") {
-                            var note = current; note.versions.append(.init(mode: .clean, text: text)); model.save(note); editing = false
-                        }.buttonStyle(.borderedProminent)
+                    VStack(alignment: .leading, spacing: 12) {
+                        TextEditor(text: $text).font(.body).frame(minHeight: 320).padding(4).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+                        HStack {
+                            Button("Отмена") { editing = false }
+                            Button("Сохранить текст") {
+                                var note = current; note.versions.append(.init(mode: .clean, text: text)); model.save(note); editing = false
+                            }.buttonStyle(.borderedProminent)
+                        }
                     }
                 } else if !content.isEmpty {
                     Text(content).font(.system(size: 16)).lineSpacing(7).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)

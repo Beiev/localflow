@@ -3,9 +3,9 @@
 import json, urllib.request
 from pathlib import Path
 configs = [
- ('asr8','Распознавание · баланс','FluidInference/parakeet-tdt-0.6b-v3-coreml','7dd20fe6b1797d35f5e3307e8b1732d9a178edfe','parakeet-tdt-0.6b-v3',['Preprocessor.mlmodelc','Encoder.mlmodelc','Decoder.mlmodelc','JointDecisionv3.mlmodelc','parakeet_vocab.json']),
- ('asr4','Распознавание · компактное','FluidInference/parakeet-tdt-0.6b-v3-coreml','7dd20fe6b1797d35f5e3307e8b1732d9a178edfe','parakeet-tdt-0.6b-v3',['Preprocessor.mlmodelc','EncoderInt4.mlmodelc','Decoder.mlmodelc','JointDecisionv3.mlmodelc','parakeet_vocab.json']),
- ('editor','Редактирование · Qwen 4B','mlx-community/Qwen3-4B-Instruct-2507-4bit','50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b','qwen3-4b',['config.json','model.safetensors','model.safetensors.index.json','tokenizer.json','tokenizer_config.json','special_tokens_map.json','added_tokens.json','chat_template.jinja','merges.txt','vocab.json','generation_config.json']),
+ ('asr8','Распознавание речи','FluidInference/parakeet-tdt-0.6b-v3-coreml','7dd20fe6b1797d35f5e3307e8b1732d9a178edfe','parakeet-tdt-0.6b-v3',['Preprocessor.mlmodelc','Encoder.mlmodelc','Decoder.mlmodelc','JointDecisionv3.mlmodelc','parakeet_vocab.json']),
+ ('editor','Редактирование · Gemma 4 E2B','mlx-community/gemma-4-e2b-it-4bit','238767527555cb75a05732a84dff5d6ba0dd6809','gemma-4-e2b',['chat_template.jinja','config.json','generation_config.json','model.safetensors','model.safetensors.index.json','processor_config.json','tokenizer.json','tokenizer_config.json']),
+ ('editor-qwen','Редактирование · Qwen 4B','mlx-community/Qwen3-4B-Instruct-2507-4bit','50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b','qwen3-4b',['config.json','model.safetensors','model.safetensors.index.json','tokenizer.json','tokenizer_config.json','special_tokens_map.json','added_tokens.json','chat_template.jinja','merges.txt','vocab.json','generation_config.json']),
  ('speakers','Разделение голосов','FluidInference/speaker-diarization-coreml','1ed7a662fdc7109e36d822db793ee6eebdaf8594','speaker-diarization',['Segmentation.mlmodelc','FBank.mlmodelc','Embedding.mlmodelc','PldaRho.mlmodelc','plda-parameters.json'])
 ]
 cache={}; result=[]

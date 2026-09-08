@@ -26,6 +26,11 @@ public enum ModelCatalog {
         return models
     }()
     public static func package(_ id: String) -> ModelPackage { packages.first { $0.id == id }! }
+    /// Selected editing model; the Gemma package is the reviewed default.
+    public static func editorPackageID() -> String {
+        let id = UserDefaults.standard.string(forKey: "editorModel") ?? "editor"
+        return packages.contains { $0.id == id } ? id : "editor"
+    }
 }
 public actor ModelInstaller {
     private static let gate = AsyncGate()

@@ -1,7 +1,7 @@
 import Foundation
 
 public protocol SpeechRecognizing: Sendable {
-    func recognize(_ samples: [Float], compact: Bool) async throws -> SpeechRecognition
+    func recognize(_ samples: [Float]) async throws -> SpeechRecognition
 }
 
 /// Disk-backed transcription with checkpointed ownership of overlapping windows.
@@ -12,7 +12,7 @@ public struct SessionTranscriber: Sendable {
     public init(recognizer: any SpeechRecognizing, store: Store) {
         self.recognizer = recognizer; self.store = store
     }
-    public func transcribe(_ session: RecordingSession, compact: Bool, progress: @escaping @Sendable (Double, Double) -> Void = { _,_ in }) async throws -> RecordingSession {
+    public func transcribe(_ session: RecordingSession, progress: @escaping @Sendable (Double, Double) -> Void = { _,_ in }) async throws -> RecordingSession {
         var result = session; result.state = "processing"; result.error = nil
         let parts = try AudioFiles.parts(session.id)
         if result.transcribedThrough == nil { result.segments = []; result.transcribedThrough = [:] }
@@ -31,7 +31,7 @@ public struct SessionTranscriber: Sendable {
                 guard !samples.isEmpty else {
                     throw LocalFlowError.message("Не удалось дочитать аудио. Исходник сохранён для восстановления.")
                 }
-                let recognition = try await recognizer.recognize(samples, compact: compact)
+                let recognition = try await recognizer.recognize(samples)
                 try Task.checkCancellation()
                 let boundaryEnd = min(duration, center + 10)
                 if recognition.words.isEmpty && !recognition.text.isEmpty {

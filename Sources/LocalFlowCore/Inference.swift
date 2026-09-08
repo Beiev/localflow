@@ -2,6 +2,8 @@ import Foundation
 import FluidAudio
 import MLXLLM
 import MLXLMCommon
+import MLXHuggingFace
+import Tokenizers
 import MLX
 
 public struct SpeechRecognition: Sendable {
@@ -13,27 +15,23 @@ public struct SpeechRecognition: Sendable {
 public actor SpeechEngine: SpeechRecognizing {
     private var manager: AsrManager?
     private let gate = AsyncGate()
-    private var loadedID: String?
     private var idleTask: Task<Void, Never>?
     public private(set) var coldStartSeconds: Double = 0
     public private(set) var inferenceSeconds: Double = 0
     public init() { ModelHub.offlineMode = true }
-    public func transcribe(_ samples: [Float], compact: Bool = false) async throws -> String {
-        try await recognize(samples, compact: compact).text
+    public func transcribe(_ samples: [Float]) async throws -> String {
+        try await recognize(samples).text
     }
-    public func recognize(_ samples: [Float], compact: Bool = false) async throws -> SpeechRecognition {
+    public func recognize(_ samples: [Float]) async throws -> SpeechRecognition {
         idleTask?.cancel()
         await gate.acquire()
         do {
             try Task.checkCancellation()
-            let id = compact ? "asr4" : "asr8"
-            guard ModelCatalog.package(id).installed else { throw LocalFlowError.message("Сначала загрузите модель распознавания в настройках") }
-            if manager == nil || loadedID != id {
+            guard ModelCatalog.package("asr8").installed else { throw LocalFlowError.message("Сначала загрузите модель распознавания в настройках") }
+            if manager == nil {
                 let start = Date()
-                if let manager { await manager.cleanup() }
-                manager = nil; loadedID = nil
-                let models = try await AsrModels.load(from: ModelCatalog.package(id).directory, version: .v3, encoderPrecision: compact ? .int4 : .int8)
-                manager = AsrManager(models: models); loadedID = id
+                let models = try await AsrModels.load(from: ModelCatalog.package("asr8").directory, version: .v3, encoderPrecision: .int8)
+                manager = AsrManager(models: models)
                 coldStartSeconds = Date().timeIntervalSince(start)
             }
             // Do not turn digital silence into a hallucinated transcript.
@@ -51,11 +49,12 @@ public actor SpeechEngine: SpeechRecognizing {
         idleTask?.cancel()
         idleTask = Task { try? await Task.sleep(for: .seconds(seconds)); guard !Task.isCancelled else { return }; await self.unload(onlyIfIdle: true) }
     }
-    public func unload(onlyIfIdle: Bool = false) async { await gate.acquire(); if onlyIfIdle && Task.isCancelled { await gate.release(); return }; if let manager { await manager.cleanup() }; manager = nil; loadedID = nil; await gate.release() }
+    public func unload(onlyIfIdle: Bool = false) async { await gate.acquire(); if onlyIfIdle && Task.isCancelled { await gate.release(); return }; if let manager { await manager.cleanup() }; manager = nil; await gate.release() }
     public var isLoaded: Bool { manager != nil }
 }
 public actor TextEngine {
     private var model: ModelContainer?
+    private var loadedID: String?
     private let gate = AsyncGate()
     private var idleTask: Task<Void, Never>?
     public private(set) var coldStartSeconds: Double = 0
@@ -65,12 +64,14 @@ public actor TextEngine {
         await gate.acquire()
         do {
             try Task.checkCancellation()
-            let package = ModelCatalog.package("editor")
+            let package = ModelCatalog.package(ModelCatalog.editorPackageID())
             guard package.installed else { throw LocalFlowError.message("Загрузите модель редактирования в настройках") }
-            if model == nil {
+            if model == nil || loadedID != package.id {
                 let start = Date()
-                GPU.set(cacheLimit: 128 * 1024 * 1024)
-                model = try await LLMModelFactory.shared.loadContainer(configuration: .init(directory: package.directory))
+                if model != nil { model = nil; await Task.yield(); Memory.clearCache() }
+                Memory.cacheLimit = 128 * 1024 * 1024
+                model = try await LLMModelFactory.shared.loadContainer(from: package.directory, using: #huggingFaceTokenizerLoader())
+                loadedID = package.id
                 coldStartSeconds = Date().timeIntervalSince(start)
             }
             let chat = ChatSession(model!, instructions: instructions, generateParameters: .init(maxTokens: 3072, maxKVSize: 8192, temperature: 0))
@@ -115,7 +116,7 @@ public actor TextEngine {
         idleTask?.cancel()
         idleTask = Task { try? await Task.sleep(for: .seconds(seconds)); guard !Task.isCancelled else { return }; await self.unload(onlyIfIdle: true) }
     }
-    public func unload(onlyIfIdle: Bool = false) async { await gate.acquire(); if onlyIfIdle && Task.isCancelled { await gate.release(); return }; model = nil; await Task.yield(); GPU.clearCache(); await gate.release() }
+    public func unload(onlyIfIdle: Bool = false) async { await gate.acquire(); if onlyIfIdle && Task.isCancelled { await gate.release(); return }; model = nil; loadedID = nil; try? await Task.sleep(for: .milliseconds(120)); Memory.clearCache(); await gate.release() }
     public var isLoaded: Bool { model != nil }
 }
 public extension Int { func nonzero(default value: Int) -> Int { self > 0 ? self : value } }

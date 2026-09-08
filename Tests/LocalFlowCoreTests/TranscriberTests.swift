@@ -6,7 +6,7 @@ private actor FixtureRecognizer: SpeechRecognizing {
     private let interruptOnCall: Int?
     var words = [TranscriptSegment(start: 0.2, end: 0.5, text: "первое"), TranscriptSegment(start: 9.8, end: 10.2, text: "граница"), TranscriptSegment(start: 29.7, end: 29.9, text: "последнее")]
     init(interruptOnCall: Int? = nil, words: [TranscriptSegment]? = nil) { self.interruptOnCall = interruptOnCall; if let words { self.words = words } }
-    func recognize(_ samples: [Float], compact: Bool) async throws -> SpeechRecognition {
+    func recognize(_ samples: [Float]) async throws -> SpeechRecognition {
         calls += 1
         if calls == interruptOnCall { throw CancellationError() }
         let offset = Double(samples.first ?? 0)
@@ -46,7 +46,7 @@ final class TranscriberTests: XCTestCase {
         try JSONEncoder().encode(parts).write(to: root.appendingPathComponent("parts.json"))
         let store = try Store(url: root.appendingPathComponent("test.sqlite"))
         let words = (1...41).map { TranscriptSegment(start: Double($0 * 10) - 0.2, end: Double($0 * 10) + 0.2, text: "граница-\($0)") } + [TranscriptSegment(start: 419.7, end: 419.9, text: "последнее")]
-        let result = try await SessionTranscriber(recognizer: FixtureRecognizer(words: words), store: store).transcribe(session, compact: false)
+        let result = try await SessionTranscriber(recognizer: FixtureRecognizer(words: words), store: store).transcribe(session)
         XCTAssertEqual(result.segments.map(\.text), words.map(\.text))
         XCTAssertEqual(result.duration, 420)
         XCTAssertEqual(try store.sessions().first?.segments.last?.text, "последнее")
@@ -54,7 +54,7 @@ final class TranscriberTests: XCTestCase {
     func testFinalPassKeepsBoundaryAndLastWordWithoutDuplicates() async throws {
         let (session, store) = try fixture()
         defer { try? FileManager.default.removeItem(at: AppPaths.audio(session.id)) }
-        let result = try await SessionTranscriber(recognizer: FixtureRecognizer(), store: store).transcribe(session, compact: false)
+        let result = try await SessionTranscriber(recognizer: FixtureRecognizer(), store: store).transcribe(session)
         XCTAssertEqual(result.segments.map(\.text), ["первое", "граница", "последнее"])
         XCTAssertEqual(result.duration, 30)
         XCTAssertEqual(result.transcribedThrough?["microphone"], 30)
@@ -64,14 +64,14 @@ final class TranscriberTests: XCTestCase {
         let (session, store) = try fixture()
         defer { try? FileManager.default.removeItem(at: AppPaths.audio(session.id)) }
         do {
-            _ = try await SessionTranscriber(recognizer: FixtureRecognizer(interruptOnCall: 2), store: store).transcribe(session, compact: false)
+            _ = try await SessionTranscriber(recognizer: FixtureRecognizer(interruptOnCall: 2), store: store).transcribe(session)
             XCTFail("Expected cancellation")
         } catch is CancellationError {}
         let saved = try XCTUnwrap(store.sessions().first)
         XCTAssertEqual(saved.transcribedThrough?["microphone"], 10)
         XCTAssertEqual(saved.segments.map(\.text), ["первое"])
         let recognizer = FixtureRecognizer()
-        let result = try await SessionTranscriber(recognizer: recognizer, store: store).transcribe(saved, compact: false)
+        let result = try await SessionTranscriber(recognizer: recognizer, store: store).transcribe(saved)
         let calls = await recognizer.callCount()
         XCTAssertEqual(calls, 2)
         XCTAssertEqual(result.segments.map(\.text), ["первое", "граница", "последнее"])

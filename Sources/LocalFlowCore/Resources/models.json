@@ -1,7 +1,7 @@
 [
   {
     "id": "asr8",
-    "title": "Распознавание · баланс",
+    "title": "Распознавание речи",
     "repo": "FluidInference/parakeet-tdt-0.6b-v3-coreml",
     "revision": "7dd20fe6b1797d35f5e3307e8b1732d9a178edfe",
     "folder": "parakeet-tdt-0.6b-v3",
@@ -135,142 +135,64 @@
     ]
   },
   {
-    "id": "asr4",
-    "title": "Распознавание · компактное",
-    "repo": "FluidInference/parakeet-tdt-0.6b-v3-coreml",
-    "revision": "7dd20fe6b1797d35f5e3307e8b1732d9a178edfe",
-    "folder": "parakeet-tdt-0.6b-v3",
+    "id": "editor",
+    "title": "Редактирование · Gemma 4 E2B",
+    "repo": "mlx-community/gemma-4-e2b-it-4bit",
+    "revision": "238767527555cb75a05732a84dff5d6ba0dd6809",
+    "folder": "gemma-4-e2b",
     "files": [
       {
-        "path": "Decoder.mlmodelc/analytics/coremldata.bin",
-        "size": 243,
-        "hash": "4238c4e81ecd0dc94bd7dfbb60f7e2cc824107c1ffe0387b8607b72833dba350",
-        "sha256": true
-      },
-      {
-        "path": "Decoder.mlmodelc/coremldata.bin",
-        "size": 554,
-        "hash": "18647af085d87bd8f3121c8a9b4d4564c1ede038dab63d295b4e745cf2d7fb99",
-        "sha256": true
-      },
-      {
-        "path": "Decoder.mlmodelc/metadata.json",
-        "size": 3427,
-        "hash": "781350d40ed83511afc3bc31a804e6a543e69d04",
+        "path": "chat_template.jinja",
+        "size": 17336,
+        "hash": "c19999a347da729cf62806a8ddb7eb8e315223b5",
         "sha256": false
       },
       {
-        "path": "Decoder.mlmodelc/model.mil",
-        "size": 13110,
-        "hash": "95328ba81ca8dceb16c039e62f1a7d447ede43c2",
+        "path": "config.json",
+        "size": 6395,
+        "hash": "1f8a26de63cd505f2fb5c98ad3f08f3e7f47a9de",
         "sha256": false
       },
       {
-        "path": "Decoder.mlmodelc/weights/weight.bin",
-        "size": 23604992,
-        "hash": "48adf0f0d47c406c8253d4f7fef967436a39da14f5a65e66d5a4b407be355d41",
-        "sha256": true
-      },
-      {
-        "path": "EncoderInt4.mlmodelc/analytics/coremldata.bin",
-        "size": 243,
-        "hash": "c296e0229ab5e32412fda92f8dcf47f0e63f0c34e343c0e2654f6c37649d2d79",
-        "sha256": true
-      },
-      {
-        "path": "EncoderInt4.mlmodelc/coremldata.bin",
-        "size": 512,
-        "hash": "3e6539cd5d5f1c3bd5a01921cd94af85eab609d49d47e1436a16faac958754d6",
-        "sha256": true
-      },
-      {
-        "path": "EncoderInt4.mlmodelc/metadata.json",
-        "size": 2954,
-        "hash": "3f3b994be82e93196572b4d7c2c054aefd48f1ad",
+        "path": "generation_config.json",
+        "size": 208,
+        "hash": "e605bb4523b1462ea9d9a3810b9e3ecf7ab7b1f6",
         "sha256": false
       },
       {
-        "path": "EncoderInt4.mlmodelc/model.mil",
-        "size": 874445,
-        "hash": "bf620dded63605d789a724012251649b1a33f5a6",
+        "path": "model.safetensors",
+        "size": 3550670554,
+        "hash": "038e39a37a7667373d2c3991375446b10c96ae1d717a68674870343db376b76e",
+        "sha256": true
+      },
+      {
+        "path": "model.safetensors.index.json",
+        "size": 218323,
+        "hash": "b145d4f0cf82ffc8c1f9bef70da4b4083646382d",
         "sha256": false
       },
       {
-        "path": "EncoderInt4.mlmodelc/weights/weight.bin",
-        "size": 297912320,
-        "hash": "6fcf5596562948c7482e116bdb3f364279bed970893b86737b67fe89f36367d9",
-        "sha256": true
-      },
-      {
-        "path": "JointDecisionv3.mlmodelc/analytics/coremldata.bin",
-        "size": 243,
-        "hash": "26def4bf73dd56d29dee21c8ef97cb8969e62f6120ed1adc91e46828e2737b6c",
-        "sha256": true
-      },
-      {
-        "path": "JointDecisionv3.mlmodelc/coremldata.bin",
-        "size": 521,
-        "hash": "f5fc08b741400f0088492c9e839418b1e18522f19cba28d361dd030c5f398342",
-        "sha256": true
-      },
-      {
-        "path": "JointDecisionv3.mlmodelc/metadata.json",
-        "size": 3453,
-        "hash": "0461ef9e55ba8e8ba0d2cb33b6e1a031b0d481d7",
+        "path": "processor_config.json",
+        "size": 1316,
+        "hash": "a086fb7e04b477c291a120b0a004abb78b11c6d2",
         "sha256": false
       },
       {
-        "path": "JointDecisionv3.mlmodelc/model.mil",
-        "size": 11775,
-        "hash": "0a80fde4b1ec61093a03fc0fc3431172db34a4d2",
-        "sha256": false
-      },
-      {
-        "path": "JointDecisionv3.mlmodelc/weights/weight.bin",
-        "size": 12642764,
-        "hash": "4e0e63d840032f7f07ddb1d64446051166281e5491bf22da8a945c41f6eedb3e",
+        "path": "tokenizer.json",
+        "size": 32169626,
+        "hash": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
         "sha256": true
       },
       {
-        "path": "Preprocessor.mlmodelc/analytics/coremldata.bin",
-        "size": 243,
-        "hash": "c9beeb989c8d66f8be11df59bc6df277ec76cee404f6865b46243835ef562f6d",
-        "sha256": true
-      },
-      {
-        "path": "Preprocessor.mlmodelc/coremldata.bin",
-        "size": 486,
-        "hash": "dbde3f2300842c1fd51ef3ff948a0bcffe65ffd2dca10707f2509f32c1d65b1d",
-        "sha256": true
-      },
-      {
-        "path": "Preprocessor.mlmodelc/metadata.json",
-        "size": 2841,
-        "hash": "06162c58cf2f5343a0e60f36f843bcdf3cc58527",
-        "sha256": false
-      },
-      {
-        "path": "Preprocessor.mlmodelc/model.mil",
-        "size": 28181,
-        "hash": "f987e2479228436c49189aa47edb376db74dcff5",
-        "sha256": false
-      },
-      {
-        "path": "Preprocessor.mlmodelc/weights/weight.bin",
-        "size": 491072,
-        "hash": "129b76e3aeafa8afa3ea76d995b964b145fe83700d579f6ff42c4c38fa0968ea",
-        "sha256": true
-      },
-      {
-        "path": "parakeet_vocab.json",
-        "size": 151122,
-        "hash": "c684822ec3b671ebc449c433a7012398d39b8bb0",
+        "path": "tokenizer_config.json",
+        "size": 2740,
+        "hash": "cf6235aee46a24bf71f251c0a4e7a0379948f7d2",
         "sha256": false
       }
     ]
   },
   {
-    "id": "editor",
+    "id": "editor-qwen",
     "title": "Редактирование · Qwen 4B",
     "repo": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
     "revision": "50d427756c6b1b2fe0c0a10f67fbda1fc8e82c1b",

@@ -1,74 +1,70 @@
 # LocalFlow
 
-Предварительная персональная версия: диктовка, голосовые заметки и созвоны на Mac. Русский интерфейс, живой текст в плавающем окне, локальные модели и локальный архив. Облачных API и зависимости от Ollama нет.
+**Local-first dictation, voice notes and meeting memory for macOS. Everything runs on your Mac — no cloud APIs, no subscriptions.**
 
-## Первый запуск
+LocalFlow is an open, privacy-first alternative to Wispr Flow built for Apple Silicon. Press **⌘B**, speak anywhere, and get clean, edited text pasted into the field you were typing in. Record calls with one shortcut, keep a voice diary, and ask questions across your own searchable archive — with every model running locally.
 
-1. Откройте LocalFlow → **Модели и настройки**.
-2. Загрузите «Распознавание · баланс» и «Редактирование · Qwen 4B». Для созвонов — «Разделение голосов».
-3. Разрешите микрофон. Для ⌘B разрешите Универсальный доступ и убедитесь, что этот шорткат не занят другим приложением.
-4. Включите шорткат. Левый ⌘B начинает и завершает диктовку; Escape отменяет. Текст появляется в небольшом окне. После остановки редактор обрабатывает расшифровку и приложение вставляет результат в исходное поле.
-5. «Новая заметка» создаёт черновик: сначала название и описание, затем отдельная кнопка диктовки. Созвон запускается одной кнопкой или левым ⌘⇧M; повторное нажатие завершает запись. Для созвона требуется разрешение записи экрана/системного аудио, хотя приложение сохраняет только звук.
+![LocalFlow main window](docs/screenshots/main-light.png)
 
-Повторное ⌘B скрывает окно, останавливает микрофон и доводит обработку до вставки. Пока идёт обработка, значок в строке меню меняется; повторное ⌘B не отменяет её. Escape отменяет запись/обработку, сохраняя аудио для восстановления.
+## What it does
 
-В настройках два глобальных режима: «Аккуратно» и «Связный текст», плюс поле «Ваш стиль». Исходник сохраняется отдельно. Если проверка замечает подозрительную редактуру, вставляется минимально очищенный исходник; обе версии сохраняются, появляется короткое уведомление. Если поле изменилось, результат доступен через уведомление (10 секунд), меню и архив. Сообщения автоматически не отправляются.
+- **Dictate anywhere (⌘B).** A small floating window shows your words live while you speak — stable text plus a dimmed draft tail. Press ⌘B again: an on-device language model strips fillers and repetitions, fixes punctuation and terms, and the result is inserted into the focused field. Escape cancels. The clipboard is restored after pasting.
+- **Two editing strengths.** *Tidy* removes speech noise while preserving facts, numbers, negations and your tone. *Flowing text* reorganizes a stream of thoughts into coherent paragraphs without inventing anything. A free-form *your style* field tunes both.
+- **Voice notes as a quiet diary page.** Create a note, write a title and a line of context, then dictate into it whenever you're ready. Notes can be extended by voice later.
+- **One-press meeting capture (⌘⇧M).** Records system audio and your microphone as separate tracks, transcribes both, splits speakers post-hoc, and produces a summary with decisions, open questions and clickable timestamps back into the audio.
+- **A memory that is actually yours.** A personal dictionary (heard → preferred spelling) is applied before every edit; familiar voices can be saved and recognized across meetings. Ask the archive a question and every claim comes with a citation and a playable timestamp.
+- **Engineered for low load.** Models load on demand and unload automatically after idle (ASR after 2 min, editor after 1 min by default). A dictated sentence edits in ~1–2 s on an M3 Pro; nothing runs in the background while you're silent.
 
-Созвоны сохраняют весь системный звук (включая другие приложения/уведомления) и отдельную дорожку микрофона. Подключённый Shure MV7+ выбирается автоматически, иначе используется системный микрофон. Выходное устройство не меняется. Число собеседников определяется после записи; его можно уточнить в записи → «Уточнить разделение голосов».
+## The models (and why)
 
-В полях с ограниченной поддержкой Accessibility может понадобиться кнопка «Скопировать». LocalFlow не отправляет сообщение за пользователя.
+All weights are pinned to exact revisions with per-file checksums and downloaded once from their publishers; after that LocalFlow works fully offline.
 
-## Модели и память
-
-| Назначение | Модель | Файлы на диске |
+| Role | Model | Disk |
 |---|---|---:|
-| Распознавание, баланс | Parakeet TDT v3, 8-bit encoder | 483 МБ |
-| Компактная альтернатива | Parakeet TDT v3, 4-bit encoder | 336 МБ |
-| Редактура и ответы | Qwen3-4B-Instruct-2507, 4-bit | 2,28 ГБ |
-| Участники | Pyannote Community-1 / WeSpeaker, CoreML | 22 МБ |
+| Speech recognition (25 languages incl. Russian) | NVIDIA Parakeet TDT 0.6B v3, CoreML on the Neural Engine | 483 MB |
+| Text editor & archive answers (default) | Google **Gemma 4 E2B** (4-bit MLX) | 3.6 GB |
+| Alternative editor | Qwen3-4B-Instruct-2507 (4-bit MLX) | 2.3 GB |
+| Speaker separation | Pyannote Community-1 / WeSpeaker (CoreML) | 22 MB |
 
-Размеры файлов не равны расходу RAM. Общие файлы вариантов ASR не дублируются. При старте приложения модели не загружаются. Аудио начинает сохраняться до готовности распознавателя; редактор загружается по запросу. По умолчанию ASR выгружается после 2 минут простоя, редактор — после 1 минуты. В настройках есть переключение 8/4-bit и изменение этих сроков. GPU-кеш редактора ограничен 128 МБ; при выгрузке очищается. При давлении памяти освобождаются неиспользуемые модели.
+The editor was chosen by a measured bake-off on a 10-case Russian dictation corpus ([docs/benchmarks](docs/benchmarks)): Gemma 4 E2B is ~2× faster than Qwen3-4B (0.32 s first token, ~76 tok/s) at equal or better fact preservation, and correctly handles self-corrections like *"send 12 files, not 15"*. Qwen3.5-4B was disqualified for silently changing meaning. Both remaining editors are selectable in Settings.
 
-Первое появление текста и результат редактора имеют измеряемую задержку; цели в 2 и 5 секунд ещё требуют проверки на реальной речи и рабочей нагрузке владельца.
+**Safety rails.** Every edited draft passes deterministic guards (number multisets, negation counts, corrected-number patterns, length ratios). A suspicious edit is never silently trusted: the minimal deterministic cleanup is delivered instead, and the model's proposal is kept as a separate version. The original transcript is always preserved. Archive answers without valid citations are rejected.
 
-## Данные
+## Build & install
 
-`~/Library/Application Support/LocalFlow/`:
-
-- `archive.sqlite`: тексты, версии, словарь, подтверждённые голоса, состояния обработки, полнотекстовый поиск.
-- `Recordings/<UUID>/`: аудио в частях по 30 секунд и журнал частей. Временные дорожки для анализа создаются по необходимости.
-- `Models/`: веса, проверенные по закреплённым ревизиям и хешам.
-
-Аудио старше 30 дней удаляется при обслуживании архива, закреплённое сохраняется. Тексты остаются до ручного удаления. Голосовой профиль сохраняется только отдельным действием. Внешняя телеметрия отсутствует. Данные и веса исключены из Git.
-
-## Сборка
-
-Нужен Apple Silicon, Xcode с поддержкой Swift 6, Metal Toolchain и XcodeGen. Приложение собирается для macOS 15+, основной целевой Mac работает на macOS 26.
+Requirements: Apple Silicon Mac, Xcode 26+ with the Metal toolchain, [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ```sh
 brew install xcodegen
 xcodebuild -downloadComponent MetalToolchain
-Scripts/build.sh
-Scripts/test.sh
-Scripts/install.sh
+Scripts/build.sh     # xcodegen + xcodebuild Release + local signing
+Scripts/test.sh      # 33 unit/interface tests
+Scripts/install.sh   # installs to ~/Applications/LocalFlow.app
 ```
 
-Приложение устанавливается в `~/Applications/LocalFlow.app`. Перед обновлением завершите его через меню приложения. Промежуточные Debug/Release-сборки находятся в папке `build.noindex`, чтобы не появляться отдельными приложениями в поиске. Сборка подписывается постоянным локальным сертификатом; платная учётная запись разработчика не нужна для сборки на своём Mac. Ключ хранится в `~/Library/Application Support/LocalFlow/Signing`, вне репозитория; эту папку нужно сохранять между обновлениями. Скрипт не добавляет сертификат в системные доверенные корни. Это не нотарифицированный дистрибутив для других пользователей. При переходе со старой ad-hoc сборки нужно один раз заново добавить LocalFlow в системные разрешения; последующие сборки используют ту же идентичность.
+First run: open **Settings → Models**, download the recognizer and editor, grant Microphone and Accessibility (for ⌘B), and — for meeting audio — Screen & System Audio Recording. The app UI is currently in Russian; the codebase and docs are English-friendly and localization is on the roadmap.
 
-Зависимости фиксируются в `Package.resolved`, модели — в `Sources/LocalFlowCore/Resources/models.json`. Команда обновления манифеста: `python3 Scripts/pin-models.py` (только при намеренном обновлении моделей).
+The build is signed with a persistent local certificate (stored outside the repo), so permissions survive re-installs on your own Mac. This is not a notarized distribution — see [docs](docs/validation.md) for the honest limitations list.
 
-## Проверки
+## Data & privacy
 
-`LocalFlowCoreTests` проверяет архив и поиск, удаление из индекса, словарь, защиту чисел и отрицаний, промежуточные гипотезы, разбиение длинного текста и сопоставление голосов.
+Everything lives in `~/Library/Application Support/LocalFlow/`: a SQLite archive with full-text search (`archive.sqlite`), chunked 30-second audio parts with a crash-safe journal, and checksum-verified model weights. Audio is pruned after 30 days (pinned items are kept), texts stay until you delete them, and there is no telemetry of any kind. Recording survives crashes: transcription is checkpointed per window and resumes where it stopped.
 
-Для запуска моделей без микрофона соберите схему `LocalFlowBench`. Команды: `install asr8 asr4 editor speakers`, `transcribe /path/to/file [--compact]`, `edit "текст"`, `diarize /path/to/file`. Для изолированных данных задайте `LOCALFLOW_DATA_DIR`.
+## Repository layout
 
-План и критерии приёмки: [docs/plan.md](docs/plan.md). Проверки и ограничения: [docs/validation.md](docs/validation.md).
+```
+Sources/LocalFlowCore/   engine: audio capture, ASR/LLM/diarization, safety guards, SQLite store
+Sources/LocalFlow/       SwiftUI app: overlay panel, archive, diary, settings
+Sources/LocalFlowBench/  CLI benchmarking harness (ASR/editor/diarization pipelines)
+Sources/LocalFlowShots/  deterministic UI screenshot generator (README images)
+Scripts/                 build, test, install, signing, model pinning, editor bake-off
+docs/                    architecture, plan, validation log, benchmarks, product strategy
+```
 
-В `docs/evaluation-corpus.json` — 40 русских фраз. `python3 Scripts/synthesize-corpus.py` создаёт синтетические аудиопримеры голосом macOS Milena. Они помогают проверить конвейер, но не заменяют речь владельца и сравнение с Handy. Фактически выполненные проверки и ограничения записываются в `docs/validation.md`.
+## Status & roadmap
 
-## Границы
+v0.2.0 — daily-driver quality for the author's setup (M3 Pro / 18 GB, macOS 26): dictation, notes, meetings, archive Q&A, model choice. Known limits: diarization can merge similar voices; latency targets on real speech are still being measured; calendar/Slack/MCP integrations and mobile are future work. Full details: [docs/plan.md](docs/plan.md), [docs/validation.md](docs/validation.md), [docs/product-strategy.md](docs/product-strategy.md).
 
-Это первая персональная версия, не обещание полного качества Wispr Flow. Редактор может ошибаться: сохраняется исходник, а консервативная проверка блокирует очевидное изменение чисел и отрицаний. Совпадение голоса использует порог и отступ от второго кандидата; пороги нужно оценить на знакомых голосах. Работа без наушников, эхо, автоматическое обнаружение встреч, календарь, Slack, MCP и мобильные приложения не входят в первую версию.
+## License
 
-Пересмотр редакторов Gemma 4 / Qwen3.5: [docs/editor-models-2026-09-08.md](docs/editor-models-2026-09-08.md).
+Code: [MIT](LICENSE). Model weights keep their publishers' licenses — see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

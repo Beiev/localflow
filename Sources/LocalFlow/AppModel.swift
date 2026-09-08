@@ -31,6 +31,7 @@ final class AppModel: ObservableObject {
     @Published var isStarting = false
     @Published var shortcutStatus = "Шорткат выключен"
     @Published var shortcutLastEvent = "Сочетание ещё не нажимали в этом запуске"
+    @Published var section = "archive"
     let store: Store
     let speech = SpeechEngine()
     let editor = TextEngine()
@@ -67,7 +68,6 @@ final class AppModel: ObservableObject {
         catch { self.error = error.localizedDescription }
     }
     func startNote(_ note: RecordingSession) { start(.note, existing: note) }
-    var compact: Bool { UserDefaults.standard.bool(forKey: "compactASR") }
     var selectedSession: RecordingSession? { sessions.first { $0.id == selection } }
     var isRecording: Bool { active != nil && !processing }
     init() throws {
@@ -152,7 +152,7 @@ final class AppModel: ObservableObject {
     }
     func start(_ kind: SessionKind, existing: RecordingSession? = nil) {
         guard active == nil, !isStarting, !processing else { return }
-        guard installed.contains(compact ? "asr4" : "asr8") else { error = "Откройте «Модели» и загрузите распознаватель. Для связного текста загрузите также редактор."; showMain(); return }
+        guard installed.contains("asr8") else { error = "Откройте «Модели» и загрузите распознаватель. Для связного текста загрузите также редактор."; showMain(); return }
 
         if let existing, existing.duration > 0, !FileManager.default.fileExists(atPath: AppPaths.audio(existing.id).appendingPathComponent("parts.json").path) {
             error = "Аудио этой заметки уже удалено. Создайте новую заметку; сохранённый текст останется в архиве."; return
@@ -208,7 +208,7 @@ final class AppModel: ObservableObject {
             let samples = Array(frame.samples.dropFirst(offset)); let start = frame.start + Double(offset)/16000
             do {
                 if !(await speech.isLoaded) { status = "Запись идёт · загружаю распознаватель…" }
-                let recognition = try await speech.recognize(samples, compact: compact)
+                let recognition = try await speech.recognize(samples)
                 let boundary = nextWindowStart[source] ?? start
                 let words = TranscriptAssembly.windowWords(recognition.words, offset: start, from: boundary, to: .infinity, source: source)
                 let text = words.map(\.text).joined(separator: " ")
@@ -290,7 +290,7 @@ final class AppModel: ObservableObject {
     }
     func process(_ session: RecordingSession, insert: Bool = false) async throws {
         status = await speech.isLoaded ? "Распознаю запись…" : "Загружаю распознаватель…"
-        var result = try await SessionTranscriber(recognizer: speech, store: store).transcribe(session, compact: compact) { [weak self] current, total in
+        var result = try await SessionTranscriber(recognizer: speech, store: store).transcribe(session) { [weak self] current, total in
             Task { @MainActor in self?.status = "Расшифровка \(Int(current))/\(Int(total)) с" }
         }
         if result.kind == .meeting && installed.contains("speakers") && result.segments.contains(where: { $0.source == "system" }) {
@@ -305,7 +305,7 @@ final class AppModel: ObservableObject {
         let raw = result.kind == .meeting ? result.referencedText : result.rawText
         finalText = TextSafety.minimalCleanup(raw, dictionary: dictionary)
         var needsReview = false
-        if !raw.isEmpty && installed.contains("editor") {
+        if !raw.isEmpty && installed.contains(ModelCatalog.editorPackageID()) {
             status = "Редактирую…"
             do {
                 let mode: ProcessingMode = result.kind == .meeting ? .summary : (result.editingMode ?? defaultEditingMode)
@@ -359,12 +359,12 @@ final class AppModel: ObservableObject {
                     while offset < stop {
                         let samples = try AudioFiles.read(AppPaths.audio(id).appendingPathComponent(part.file), from: offset, duration: min(12, stop - offset))
                         if samples.isEmpty { break }
-                        fragments.append(try await speech.transcribe(samples, compact: compact))
+                        fragments.append(try await speech.transcribe(samples))
                         offset += Double(samples.count)/16000
                     }
                 }
                 let raw = fragments.joined(separator: " ")
-                let value = installed.contains("editor") ? try await editor.edit(raw, mode: defaultEditingMode, dictionary: dictionary, style: editingStyle).text : raw
+                let value = installed.contains(ModelCatalog.editorPackageID()) ? try await editor.edit(raw, mode: defaultEditingMode, dictionary: dictionary, style: editingStyle).text : raw
                 finalText = value
                 if !(await insertion.paste(value)) { status = "Диктовка готова — скопируйте текст" }
                 else { status = "Созвон продолжается" }

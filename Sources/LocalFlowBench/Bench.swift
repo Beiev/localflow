@@ -25,7 +25,7 @@ struct Bench {
                 let started = Date()
                 for part in try AudioFiles.parts(session.id) {
                     let samples = try AudioFiles.read(AppPaths.audio(session.id).appendingPathComponent(part.file), duration: part.duration)
-                    let result = try await engine.recognize(samples, compact: args.contains("--compact"))
+                    let result = try await engine.recognize(samples)
                     print(result.text)
                     print("timed_words=\(result.words.count)")
                 }
@@ -40,7 +40,7 @@ struct Bench {
                 defer { try? FileManager.default.removeItem(at: directory) }
                 let store = try Store(url: directory.appendingPathComponent("benchmark.sqlite"))
                 let speech = SpeechEngine(); let editor = TextEngine(); let start = Date()
-                let transcript = try await SessionTranscriber(recognizer: speech, store: store).transcribe(session, compact: false)
+                let transcript = try await SessionTranscriber(recognizer: speech, store: store).transcribe(session)
                 let transcribed = Date()
                 let edited = try await editor.edit(transcript.rawText, mode: .clean, dictionary: [])
                 let delivered = TextSafety.deliveryText(original: transcript.rawText, edited: edited.text, requiresReview: edited.guarded, dictionary: [])
@@ -73,7 +73,7 @@ struct Bench {
                 print(result.text); if result.guarded { print("proposals=\(result.proposals)") }; print("guarded=\(result.guarded) elapsed_s=\(Date().timeIntervalSince(start)) footprint_mb=\(ProcessMetrics.footprintMB)")
                 await engine.unload(); print("after_unload_mb=\(ProcessMetrics.footprintMB)")
             case "batch":
-                guard args.count > 2 else { throw LocalFlowError.message("batch MANIFEST OUTPUT [--compact]") }
+                guard args.count > 2 else { throw LocalFlowError.message("batch MANIFEST OUTPUT") }
                 let data = try Data(contentsOf: URL(fileURLWithPath: args[1]))
                 let cases = try JSONDecoder().decode([EvaluationCase].self, from: data)
                 let engine = SpeechEngine(); var results: [EvaluationResult] = []
@@ -83,12 +83,12 @@ struct Bench {
                     let started = Date(); var texts: [String] = []; var updates: [Double] = []
                     for part in try AudioFiles.parts(temp.id) {
                         let samples = try AudioFiles.read(AppPaths.audio(temp.id).appendingPathComponent(part.file), duration: part.duration)
-                        texts.append(try await engine.transcribe(samples, compact: args.contains("--compact")))
+                        texts.append(try await engine.transcribe(samples))
                         // Replay prefixes from one to eight seconds to measure actual partial inference cost.
                         if item.id == "ru-01" {
                             for seconds in 1...min(8, Int(part.duration)) {
                                 let before = Date()
-                                _ = try await engine.transcribe(Array(samples.prefix(seconds * 16000)), compact: args.contains("--compact"))
+                                _ = try await engine.transcribe(Array(samples.prefix(seconds * 16000)))
                                 updates.append(Date().timeIntervalSince(before))
                             }
                         }
@@ -151,7 +151,7 @@ struct Bench {
                 let json = try JSONSerialization.data(withJSONObject: spans, options: [.sortedKeys])
                 print("spans=" + String(decoding: json, as: UTF8.self))
                 print("speakers=\(result.speakerDatabase?.count ?? 0) elapsed_s=\(Date().timeIntervalSince(start)) footprint_mb=\(ProcessMetrics.footprintMB)")
-            default: print("LocalFlowBench install asr8 asr4 editor speakers | transcribe FILE [--compact] | edit TEXT | diarize FILE")
+            default: print("LocalFlowBench install [asr8 editor editor-qwen speakers] | transcribe FILE | edit TEXT | diarize FILE")
             }
         } catch { FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8)); exit(1) }
     }

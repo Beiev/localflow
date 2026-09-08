@@ -94,7 +94,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
     func show(model: AppModel) {
         receiptTask?.cancel()
         if panel == nil {
-            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 440, height: 190), styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
+            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 460, height: 204), styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
             panel.level = .floating; panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             panel.isFloatingPanel = true; panel.hidesOnDeactivate = false; panel.isMovableByWindowBackground = true
             panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = true; panel.delegate = self
@@ -103,7 +103,7 @@ final class OverlayController: NSObject, NSWindowDelegate {
         }
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main!
         let saved = UserDefaults.standard.string(forKey: "overlayOrigin").map(NSPointFromString)
-        let origin = saved.flatMap { p in NSScreen.screens.contains { $0.visibleFrame.contains(NSRect(origin: p, size: panel!.frame.size)) } ? p : nil } ?? NSPoint(x: screen.visibleFrame.midX - 220, y: screen.visibleFrame.minY + 32)
+        let origin = saved.flatMap { p in NSScreen.screens.contains { $0.visibleFrame.contains(NSRect(origin: p, size: panel!.frame.size)) } ? p : nil } ?? NSPoint(x: screen.visibleFrame.midX - 230, y: screen.visibleFrame.minY + 32)
         panel?.setFrameOrigin(origin); panel?.orderFrontRegardless()
     }
     func showReceipt(model: AppModel) {
