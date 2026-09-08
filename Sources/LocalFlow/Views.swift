@@ -11,16 +11,11 @@ struct OverlayView: View {
                 Text(model.status).font(.system(size: 11, weight: .medium)).lineLimit(1)
                 Spacer()
                 Text(Duration.seconds(model.elapsed).formatted(.time(pattern: .minuteSecond))).monospacedDigit().font(.caption).foregroundStyle(.secondary)
-                if model.active?.kind == .meeting { Button { model.overlay.hide() } label: { Image(systemName: "xmark") }.help("Скрыть окно; запись продолжится") }
+                Button { if model.isRecording && model.active?.kind != .meeting { model.stop() } else { model.overlay.hide() } } label: { Image(systemName: "xmark") }.help("Завершить диктовку и скрыть окно")
                 Button { model.showMain() } label: { Image(systemName: "arrow.up.left.and.arrow.down.right") }.help("Развернуть")
             }
-            VStack(alignment: .leading) {
-                if model.stableText.isEmpty && model.draftText.isEmpty {
-                    Text(model.processing ? "Готовлю текст…" : "Говорите — слова появятся здесь").foregroundStyle(.secondary)
-                } else {
-                    (Text(String(model.stableText.suffix(200))) + Text(model.draftText.isEmpty ? "" : " " + model.draftText).foregroundColor(.secondary)).lineLimit(4)
-                }
-            }.font(.system(size: 15)).frame(maxWidth: .infinity, minHeight: 72, alignment: .topLeading)
+            LiveTranscriptView(stable: model.stableText.isEmpty && model.draftText.isEmpty ? (model.processing ? "Готовлю текст…" : "Говорите — слова появятся здесь") : model.stableText, draft: model.draftText)
+                .frame(height: 78)
             HStack {
                 Text("⌘B").font(.caption).foregroundStyle(.tertiary)
                 Spacer()
@@ -44,7 +39,6 @@ struct MainView: View {
     @State private var section = "archive"
     @State private var search = ""
     @State private var question = ""
-    @State private var showMeeting = false
     var body: some View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 22) {
@@ -60,8 +54,9 @@ struct MainView: View {
                 Divider()
                 Text("НОВАЯ ЗАПИСЬ").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 14) {
-                    Button { model.start(.note); section = "archive" } label: { Label("Голосовая заметка", systemImage: "mic") }
-                    Button { showMeeting = true; model.loadApplications() } label: { Label("Записать созвон", systemImage: "person.2.wave.2") }
+                    Button { model.toggleDictation() } label: { Label("Диктовать · ⌘B", systemImage: "mic") }
+                    Button { model.createNote(); section = "archive" } label: { Label("Новая заметка", systemImage: "square.and.pencil").frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()) }
+                    Button { model.toggleMeeting() } label: { Label("Записать созвон", systemImage: "person.2.wave.2").frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()) }
                     Button { model.importAudio() } label: { Label("Импорт аудио", systemImage: "square.and.arrow.down") }
                 }.buttonStyle(.plain).disabled(model.isRecording || model.processing || model.isStarting)
                 Spacer()
@@ -73,26 +68,21 @@ struct MainView: View {
                 if section == "models" { SettingsView(model: model) }
                 else if section == "memory" { MemoryView(model: model) }
                 else { archive }
+                if !model.isRecording && !model.processing && !model.finalText.isEmpty {
+                    HStack {
+                        Text(model.status).font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Скопировать текст") { model.copyResult() }
+                    }.padding(12)
+                }
             }
         }
         .frame(minWidth: 940, minHeight: 640)
         .tint(.indigo)
         .alert("LocalFlow", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("Понятно") { model.error = nil } } message: { Text(model.error ?? "") }
-        .sheet(isPresented: $showMeeting) {
-            VStack(alignment: .leading, spacing: 20) {
-                Text("Запись созвона").font(.title2.bold())
-                Text("Выберите приложение, звук которого нужно записывать. Ваш микрофон сохранится отдельной дорожкой. Для первого теста используйте наушники.").foregroundStyle(.secondary)
-                Picker("Приложение", selection: $model.applicationPID) { Text("Выберите приложение").tag(pid_t(0)); ForEach(model.applications, id: \.processID) { app in Text(app.applicationName).tag(app.processID) } }
-                Picker("Собеседников, кроме вас", selection: $model.expectedRemoteSpeakers) {
-                    Text("Определить автоматически").tag(0)
-                    ForEach(1...16, id: \.self) { Text("\($0)").tag($0) }
-                }
-                HStack { Button("Обновить список") { model.loadApplications() }; Spacer(); Button("Отмена") { showMeeting = false }; Button("Начать запись") { showMeeting = false; model.start(.meeting) }.buttonStyle(.borderedProminent).disabled(model.applicationPID == 0) }
-            }.padding(28).frame(width: 520)
-        }
     }
     private func nav(_ id: String, _ name: String, _ icon: String) -> some View {
-        Button { section = id } label: { Label(name, systemImage: icon).frame(maxWidth: .infinity, alignment: .leading).padding(10).background(section == id ? Color.indigo.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 9)) }.buttonStyle(.plain)
+        Button { section = id } label: { Label(name, systemImage: icon).frame(maxWidth: .infinity, alignment: .leading).padding(10).contentShape(Rectangle()).background(section == id ? Color.indigo.opacity(0.12) : .clear, in: RoundedRectangle(cornerRadius: 9)) }.buttonStyle(.plain)
     }
     private var recordingBar: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -104,20 +94,8 @@ struct MainView: View {
                 if model.isRecording { Button(model.paused ? "Продолжить" : "Пауза") { model.pause() }; Button("Завершить") { model.stop() }.buttonStyle(.borderedProminent) }
                 else { ProgressView().controlSize(.small) }
             }
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(model.liveSegments) { segment in
-                            Text("[\(segment.timestamp)] \(segment.source == "microphone" ? "Я" : "Собеседник"): \(segment.text)")
-                                .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
-                        }
-                        ForEach(model.liveTails.keys.sorted(), id: \.self) { source in
-                            Text("\(source == "microphone" ? "Я" : "Собеседник"): \(model.liveTails[source] ?? "")").foregroundStyle(.secondary)
-                        }
-                        Color.clear.frame(height: 1).id("liveEnd")
-                    }
-                }.onChange(of: model.liveRevision) { _, _ in proxy.scrollTo("liveEnd", anchor: .bottom) }
-            }.frame(maxHeight: 180)
+            LiveTranscriptView(stable: model.liveSegments.suffix(50).map { $0.text }.joined(separator: "\n"), draft: model.liveTails.keys.sorted().compactMap { model.liveTails[$0] }.joined(separator: "\n"), fontSize: 14)
+                .frame(height: 140)
         }.padding(20).background(Color.indigo.opacity(0.06))
     }
     private var archive: some View {
@@ -136,7 +114,10 @@ struct MainView: View {
                     }
                 }.listStyle(.inset)
             }.frame(minWidth: 250, idealWidth: 300, maxWidth: 370)
-            if let session = model.selectedSession { SessionView(model: model, session: session).id(session.id) }
+            if let session = model.selectedSession {
+                if session.kind == .note { DiaryView(model: model, session: session).id(session.id) }
+                else { SessionView(model: model, session: session).id(session.id) }
+            }
             else {
                 VStack(spacing: 20) {
                     Image(systemName: "waveform.circle.fill").font(.system(size: 64)).foregroundStyle(.indigo.opacity(0.8))
@@ -175,7 +156,7 @@ struct SessionView: View {
                     Button("Экспорт") { model.export(current, text: shownText) }
                     Spacer(); Button(role: .destructive) { deletePrompt = true } label: { Image(systemName: "trash") }.disabled(model.processing || model.isRecording)
                 }
-                Picker("Версия", selection: $selectedVersion) { Text("Исходная расшифровка").tag(-1); ForEach(Array(current.versions.enumerated()), id: \.element.id) { index, item in Text("\(item.mode.title) · \(item.date.formatted(date: .omitted, time: .shortened))").tag(index) } }
+                Picker("Версия", selection: $selectedVersion) { Text("Исходная расшифровка").tag(-1); ForEach(Array(current.versions.enumerated()), id: \.element.id) { index, item in Text("\(item.label ?? item.mode.title) · \(item.date.formatted(date: .omitted, time: .shortened))").tag(index) } }
                 if editing {
                     TextEditor(text: $editText).font(.body).frame(minHeight: 300)
                     HStack { Button("Отмена") { editing = false }; Button("Сохранить версию") { var value = current; value.versions.append(.init(mode: .clean, text: editText)); model.save(value); selectedVersion = value.versions.count - 1; editing = false }.buttonStyle(.borderedProminent) }
@@ -184,18 +165,39 @@ struct SessionView: View {
                         ForEach(current.segments.sorted { $0.start < $1.start }) { segment in
                             HStack(alignment: .top, spacing: 12) {
                                 Button(segment.timestamp) { model.play(current, at: segment.start, source: segment.source) }.font(.caption.monospaced()).foregroundStyle(.indigo)
-                                VStack(alignment: .leading, spacing: 4) { Text(current.speakers[segment.speaker ?? ""] ?? segment.speaker ?? (segment.source == "microphone" ? "Я" : "Собеседник")).font(.caption.bold()).foregroundStyle(.secondary); Text(segment.text).textSelection(.enabled) }
+                                VStack(alignment: .leading, spacing: 4) { Text(current.speakerName(segment.speaker, source: segment.source)).font(.caption.bold()).foregroundStyle(.secondary); Text(segment.text).textSelection(.enabled) }
                             }
                         }
                     }
                     if current.segments.isEmpty { Text("Расшифровка появится после обработки.").foregroundStyle(.secondary) }
                 } else { Text(shownText).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).lineSpacing(5) }
-                HStack { Button("Редактировать текст") { editText = shownText; editing = true }; Button("Остановить воспроизведение") { model.stopPlayback() } }
+                HStack { Button("Редактировать текст") { editText = shownText; editing = true }; Button("Остановить воспроизведение") { model.stopPlayback() }.disabled(!model.isPlaying) }
                 DisclosureGroup("Запомнить исправление") { HStack { TextField("Как распознано", text: $heard); TextField("Как правильно", text: $preferred); Button("Запомнить") { model.addWord(heard, preferred); heard = ""; preferred = "" } }.textFieldStyle(.roundedBorder).padding(.top, 8) }
+                if current.kind == .meeting {
+                    DisclosureGroup("Уточнить разделение голосов") {
+                        Picker("Собеседников", selection: Binding(get: { current.expectedRemoteSpeakers ?? 0 }, set: { count in var value = current; value.expectedRemoteSpeakers = count == 0 ? nil : count; model.save(value) })) {
+                            Text("Автоматически").tag(0)
+                            ForEach(1...16, id: \.self) { Text("\($0)").tag($0) }
+                        }
+                        Button("Пересчитать участников") { model.retry(current) }.disabled(model.processing || model.isRecording)
+                    }
+                }
                 if !current.embeddings.isEmpty {
                     DisclosureGroup("Участники и знакомые голоса") {
                         ForEach(current.embeddings.keys.sorted(), id: \.self) { id in
-                            HStack { Text(id).frame(width: 80); TextField("Имя", text: Binding(get: { speakerNames[id] ?? current.speakers[id] ?? "" }, set: { speakerNames[id] = $0 })); Button("Сохранить имя") { var value = current; value.speakers[id] = speakerNames[id] ?? current.speakers[id]; model.save(value) }; Button("Запомнить голос") { model.saveVoice(speakerNames[id] ?? current.speakers[id] ?? "", embedding: current.embeddings[id] ?? []) } }.padding(.top, 8)
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(current.speakerName(id, source: "system")).font(.caption.bold())
+                                TextField("Имя участника", text: Binding(get: { speakerNames[id] ?? current.speakers[id] ?? "" }, set: { speakerNames[id] = $0 }))
+                                HStack {
+                                    Button("Сохранить имя") {
+                                        var value = current
+                                        let name = (speakerNames[id] ?? current.speakers[id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                                        value.speakers[id] = name.isEmpty ? nil : name; model.save(value)
+                                    }
+                                    Button("Запомнить голос") { model.saveVoice(speakerNames[id] ?? current.speakers[id] ?? "", embedding: current.embeddings[id] ?? []) }
+                                        .disabled((speakerNames[id] ?? current.speakers[id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                }
+                            }.padding(.top, 12)
                         }
                     }
                 }
@@ -218,7 +220,26 @@ struct ArchiveQuestionView: View {
             if session != nil { Toggle("Искать во всех записях", isOn: $allArchive).toggleStyle(.checkbox) }
             HStack { TextField("Какие решения мы приняли?", text: $question).textFieldStyle(.roundedBorder).onSubmit(ask); Button(action: ask) { Image(systemName: "arrow.up") }.disabled(model.asking || model.processing || model.isRecording) }
             if model.asking { ProgressView("Ищу ответ в записях…").controlSize(.small) }
-            if !model.answer.isEmpty { Text(model.answer).textSelection(.enabled); ForEach(Array(model.answerSources.enumerated()), id: \.element.id) { index, source in Button("[\(index+1)] \(source.title)") { model.selection = source.id }.font(.caption) } }
+            if !model.answer.isEmpty {
+                Text(model.answer).textSelection(.enabled)
+                ForEach(Array(model.answerSources.enumerated()), id: \.element.id) { index, source in
+                    Button("[\(index+1)] \(source.title)") { model.selection = source.id }.font(.caption)
+                }
+                if !model.answerExcerpts.isEmpty {
+                    DisclosureGroup("Исходные фрагменты") {
+                        ForEach(model.answerExcerpts) { excerpt in
+                            HStack(alignment: .top) {
+                                Button("[\(excerpt.sourceIndex)] \(excerpt.segment.timestamp)") {
+                                    if let recording = model.sessions.first(where: { $0.id == excerpt.recordingID }) {
+                                        model.play(recording, at: excerpt.segment.start, source: excerpt.segment.source)
+                                    }
+                                }.font(.caption.monospaced())
+                                Text(excerpt.segment.text).font(.caption).textSelection(.enabled)
+                            }.padding(.top, 6)
+                        }
+                    }
+                }
+            }
         }
     }
     private func ask() { guard !model.processing, !model.isRecording else { return }; model.ask(question, session: allArchive ? nil : session) }
@@ -239,48 +260,5 @@ struct MemoryView: View {
                 ForEach(model.voices) { voice in HStack { Label(voice.name, systemImage: "person.wave.2"); Spacer(); Button("Удалить голос", role: .destructive) { model.deleteItem(voice.id, voice: true) } } }
             }
         }.formStyle(.grouped).navigationTitle("Память")
-    }
-}
-struct SettingsView: View {
-    @ObservedObject var model: AppModel
-    @AppStorage("compactASR") private var compact = false
-    @AppStorage("asrIdleSeconds") private var asrIdle = 120
-    @AppStorage("editorIdleSeconds") private var editorIdle = 60
-    @AppStorage("shortcutEnabled") private var shortcutEnabled = false
-    var body: some View {
-        Form {
-            Section("Первый запуск") {
-                Text("Загрузите распознаватель и редактор. Для созвонов добавьте разделение голосов. После загрузки интернет не нужен.")
-                HStack { Button("Разрешить ⌘B во всей системе") { model.enableShortcut() }; Toggle("Шорткат включён", isOn: $shortcutEnabled).onChange(of: shortcutEnabled) { _, value in model.shortcut.enabled = value; if value { _ = model.shortcut.install() } } }
-                HStack {
-                    Link("Доступ к микрофону", destination: URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
-                    Link("Доступ к звуку созвонов", destination: URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
-                }.font(.caption)
-                Text("Освободите левый ⌘B в Handy. LocalFlow не меняет настройки других приложений.").font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Модели на устройстве") {
-                ForEach(ModelCatalog.packages) { package in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack { VStack(alignment: .leading) { Text(package.title).fontWeight(.medium); Text(ByteCountFormatter.string(fromByteCount: package.bytes, countStyle: .file)).font(.caption).foregroundStyle(.secondary) }; Spacer()
-                            if model.installed.contains(package.id) { Label("Установлена", systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
-                            else if model.downloadProgress[package.id] != nil { Button("Остановить") { model.cancelDownload(package.id) } }
-                            else { Button("Загрузить") { model.install(package) } }
-                        }
-                        if let progress = model.downloadProgress[package.id] { ProgressView(value: min(1, progress)); Text("\(Int(min(1, progress) * 100))% · Можно продолжить после остановки").font(.caption) }
-                    }.padding(.vertical, 4)
-                }
-            }
-            Section("Скорость и память") {
-                Toggle("Компактный распознаватель · 4-bit", isOn: $compact).disabled(model.isRecording || model.processing)
-                Text("По умолчанию используется 8-bit. Компактный вариант занимает меньше места; сравните качество на своих записях.").font(.caption).foregroundStyle(.secondary)
-                Picker("Выгружать распознаватель после простоя", selection: $asrIdle) { Text("30 секунд").tag(30); Text("2 минуты · баланс").tag(120); Text("5 минут").tag(300) }
-                Picker("Выгружать редактор после простоя", selection: $editorIdle) { Text("Сразу после обработки").tag(1); Text("1 минута · баланс").tag(60); Text("3 минуты").tag(180) }
-                Text("В простое микрофон выключен. Распознавание использует Neural Engine; редактор запускается только для обработки. Первый запуск после выгрузки будет медленнее.").font(.caption).foregroundStyle(.secondary)
-                Text(model.modelStatus).font(.caption)
-                Text(model.metrics).font(.caption.monospaced()).foregroundStyle(.secondary)
-                HStack { Button("Обновить показатели") { Task { await model.updateMetrics() } }; Button("Освободить память сейчас") { Task { await model.unloadModels() } }.disabled(model.isRecording || model.processing || model.asking) }
-            }
-            Section("Хранение") { Text("Аудио удаляется через 30 дней. Закреплённые записи сохраняются без срока. Тексты остаются до ручного удаления."); Button("Открыть папку данных") { NSWorkspace.shared.open(AppPaths.root) } }
-        }.formStyle(.grouped).navigationTitle("Модели и настройки").onAppear { model.refresh() }
     }
 }

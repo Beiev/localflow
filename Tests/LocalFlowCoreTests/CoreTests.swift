@@ -2,6 +2,92 @@ import XCTest
 import LocalFlowCore
 
 final class CoreTests: XCTestCase {
+    func testRejectedEditStillProducesDeliverableTextWithoutChangingFacts() {
+        let original = "Эээ, бюджет 250000 рублей, данные не отправляем. " + String(repeating: "Это длинная диктовка. ", count: 80)
+        let proposal = "Бюджет 250 рублей. Данные отправляем."
+        let review = TextSafety.reviewEdit(original: original, edited: proposal, mode: .compose)
+        XCTAssertTrue(review.requiresReview)
+        XCTAssertEqual(review.text, proposal)
+        let delivered = TextSafety.deliveryText(original: original, edited: review.text, requiresReview: review.requiresReview, dictionary: [])
+        XCTAssertTrue(delivered.contains("250000"))
+        XCTAssertTrue(delivered.contains("не отправляем"))
+        XCTAssertTrue(delivered.hasSuffix("Это длинная диктовка."))
+        XCTAssertFalse(delivered.contains("Эээ"))
+        XCTAssertEqual(TextSafety.deliveryText(original: original, edited: nil, requiresReview: false, dictionary: []), delivered)
+    }
+    func testMeetingShortcutIsDistinctFromDictation() {
+        XCTAssertTrue(ShortcutChord.isMeeting(keyCode: 46, flags: (1 << 20) | (1 << 17) | 0x8))
+        XCTAssertFalse(ShortcutChord.isMeeting(keyCode: 46, flags: (1 << 20) | 0x8))
+        XCTAssertFalse(ShortcutChord.isLeftCommandB(keyCode: 11, flags: (1 << 20) | (1 << 17) | 0x8))
+    }
+    func testDraftNoteStartsWithoutRecordingAndKeepsDescription() throws {
+        let note = RecordingSession.draftNote()
+        XCTAssertEqual(note.state, "draft")
+        XCTAssertTrue(note.segments.isEmpty)
+        XCTAssertEqual(note.duration, 0)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: AppPaths.audio(note.id).path))
+        var described = note; described.noteDescription = "Идеи дневника"; described.editingMode = .compose
+        let restored = try JSONDecoder().decode(RecordingSession.self, from: JSONEncoder().encode(described))
+        XCTAssertEqual(restored.noteDescription, described.noteDescription)
+        XCTAssertEqual(restored.editingMode, .compose)
+        let legacy = try JSONDecoder().decode(RecordingSession.self, from: JSONEncoder().encode(note))
+        XCTAssertNil(legacy.editingMode)
+        XCTAssertNil(legacy.noteDescription)
+    }
+    func testSuspiciousEditRemainsAReviewableProposal() {
+        let original = "Бюджет 5000 рублей. Мы не запускаем рекламу."
+        let proposed = "Бюджет 500 рублей. Мы запускаем рекламу."
+        for mode: ProcessingMode in [.clean, .compose] {
+            let result = TextSafety.reviewEdit(original: original, edited: proposed, mode: mode)
+            XCTAssertEqual(result.text, proposed)
+            XCTAssertTrue(result.requiresReview)
+        }
+        let safe = TextSafety.reviewEdit(original: "Эээ, бюджет 5000.", edited: "Бюджет 5000.", mode: .clean)
+        XCTAssertFalse(safe.requiresReview)
+        let empty = TextSafety.reviewEdit(original: original, edited: " ", mode: .clean)
+        XCTAssertEqual(empty.text, original); XCTAssertTrue(empty.requiresReview)
+    }
+    func testCorruptArchiveReturnsErrorWithoutReplacingFile() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("archive.sqlite")
+        let original = Data("not a SQLite database".utf8); try original.write(to: url)
+        XCTAssertThrowsError(try Store(url: url))
+        XCTAssertEqual(try Data(contentsOf: url), original)
+    }
+    func testRetentionKeepsPinnedAndQueuedAudioAndAllText() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let store = try Store(url: root.appendingPathComponent("archive.sqlite"))
+        var expired = RecordingSession(kind: .note); expired.createdAt = Date().addingTimeInterval(-31 * 86400); expired.state = "ready"
+        var pinned = RecordingSession(kind: .note); pinned.createdAt = expired.createdAt; pinned.state = "ready"; pinned.pinned = true
+        var queued = RecordingSession(kind: .note); queued.createdAt = expired.createdAt; queued.state = "queued"
+        let sessions = [expired, pinned, queued]
+        defer { for session in sessions { try? FileManager.default.removeItem(at: AppPaths.audio(session.id)) }; try? FileManager.default.removeItem(at: root) }
+        for session in sessions { try store.save(session); try FileManager.default.createDirectory(at: AppPaths.audio(session.id), withIntermediateDirectories: true) }
+        try store.pruneAudio()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: AppPaths.audio(expired.id).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: AppPaths.audio(pinned.id).path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: AppPaths.audio(queued.id).path))
+        XCTAssertEqual(try store.sessions().count, 3)
+    }
+    func testAnswersRequireExistingSourcesAndTimestamps() {
+        let evidence = "[1] Заметка\n[00:12] Бюджет 5000\n[2] Созвон\n[01:03] Решили проверить"
+        XCTAssertTrue(TextSafety.hasValidCitations("Бюджет 5000 [1] [00:12]", evidence: evidence))
+        XCTAssertFalse(TextSafety.hasValidCitations("Бюджет 5000 [3]", evidence: evidence))
+        XCTAssertFalse(TextSafety.hasValidCitations("Бюджет 5000 [1] [02:00]", evidence: evidence))
+        XCTAssertFalse(TextSafety.hasValidCitations("Бюджет 5000", evidence: evidence))
+    }
+    func testShortcutUsesLeftCommandFromEvent() {
+        XCTAssertTrue(ShortcutChord.isLeftCommandB(keyCode: 11, flags: (1 << 20) | 0x8))
+        XCTAssertFalse(ShortcutChord.isLeftCommandB(keyCode: 11, flags: (1 << 20) | 0x10))
+        XCTAssertFalse(ShortcutChord.isLeftCommandB(keyCode: 11, flags: 0x8))
+        XCTAssertFalse(ShortcutChord.isLeftCommandB(keyCode: 8, flags: (1 << 20) | 0x8))
+        for modifier: UInt64 in [1 << 17, 1 << 18, 1 << 19] {
+            XCTAssertFalse(ShortcutChord.isLeftCommandB(keyCode: 11, flags: (1 << 20) | 0x8 | modifier))
+        }
+    }
+
     func testOverlappingWindowsOwnBoundaryWordExactlyOnce() {
         let first = [TranscriptSegment(start: 6.7, end: 7.3, text: "граница")]
         let second = [TranscriptSegment(start: 0.7, end: 1.3, text: "граница")]

@@ -10,26 +10,40 @@
 		0C2CA589A7DAA62CFA5C1EAD /* Bench.swift in Sources */ = {isa = PBXBuildFile; fileRef = 766B33FEF832846BFA4FFAD7 /* Bench.swift */; };
 		194F8EB804FD2B579B658F8D /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE5540CAF5717E62EF3F28E8 /* AppModel.swift */; };
 		1C72ABBAF3AD69832A6060C9 /* LocalFlowCore in Frameworks */ = {isa = PBXBuildFile; productRef = 90EBA0D15AC91B52856C9B49 /* LocalFlowCore */; };
+		2F33F1FBB0F13A4050D04502 /* LiveTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73284D85DE9F90AF57695193 /* LiveTranscriptView.swift */; };
+		3BED8ACF93DF1887465842F5 /* AudioPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D43FA4FBEBBA5D5E21A1069 /* AudioPlayback.swift */; };
 		671CD4FC56578DF273ECEEC0 /* LocalFlowCore in Frameworks */ = {isa = PBXBuildFile; productRef = ACC864DFBE89F5B1B71D0EA2 /* LocalFlowCore */; };
 		92379FF4AC26F139B686A2D0 /* LocalFlowApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4AD72D510C6BC8691781F42 /* LocalFlowApp.swift */; };
 		95BD29BA4B1882EB72FDBFDC /* LocalFlow.icns in Resources */ = {isa = PBXBuildFile; fileRef = 8CBD3E61D7175D8DCF36F830 /* LocalFlow.icns */; };
+		A1D4AC27EB1BFC1CB0E1D002 /* TranscriberTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB014DC10D16B7AF64C2A969 /* TranscriberTests.swift */; };
 		A9A230CEFFAEF1B3B4CD5053 /* SystemIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39FDC656F128B9400E0EC928 /* SystemIntegration.swift */; };
+		B09185F73404080301B856D3 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25DCB08E0CE2C10BC1E6A89A /* SettingsView.swift */; };
 		C4C5D6941630B9020C8B387E /* LocalFlowCore in Frameworks */ = {isa = PBXBuildFile; productRef = 6A2346E6ECEA9EE811926A9C /* LocalFlowCore */; };
+		C81FD7B984D761C959AB31FD /* LiveTranscriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33A52AFE244900698303D55F /* LiveTranscriptTests.swift */; };
 		D6F09D6F166909093D129367 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E626B83FD5DC2AEB144BB0 /* Views.swift */; };
+		D987F1C5B880CABB817A4F74 /* DiaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6841E2DBBB034738DCFEA434 /* DiaryView.swift */; };
+		DF27CFCDCB49C2D80D2E6C16 /* LiveTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73284D85DE9F90AF57695193 /* LiveTranscriptView.swift */; };
 		E45955EB14AD0120B3D8B142 /* CoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB3E9541B269457C1F3F8855 /* CoreTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		25DCB08E0CE2C10BC1E6A89A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		33A52AFE244900698303D55F /* LiveTranscriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTranscriptTests.swift; sourceTree = "<group>"; };
 		39FDC656F128B9400E0EC928 /* SystemIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemIntegration.swift; sourceTree = "<group>"; };
 		3A6F373F490E374717B1F6C6 /* LocalFlowCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LocalFlowCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		3D43FA4FBEBBA5D5E21A1069 /* AudioPlayback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayback.swift; sourceTree = "<group>"; };
 		4E71784E66C848355653965F /* LocalFlowBench */ = {isa = PBXFileReference; includeInIndex = 0; path = LocalFlowBench; sourceTree = BUILT_PRODUCTS_DIR; };
+		6841E2DBBB034738DCFEA434 /* DiaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiaryView.swift; sourceTree = "<group>"; };
 		6EA08D28D304B509316E1519 /* localflow */ = {isa = PBXFileReference; lastKnownFileType = folder; name = localflow; path = .; sourceTree = SOURCE_ROOT; };
+		73284D85DE9F90AF57695193 /* LiveTranscriptView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTranscriptView.swift; sourceTree = "<group>"; };
+		73BBEBD5F3CD77FFEAB4FFA2 /* LocalFlowInterfaceTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LocalFlowInterfaceTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		766B33FEF832846BFA4FFAD7 /* Bench.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bench.swift; sourceTree = "<group>"; };
 		8040A37B08BE8E069A106059 /* LocalFlow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LocalFlow.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8CBD3E61D7175D8DCF36F830 /* LocalFlow.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = LocalFlow.icns; sourceTree = "<group>"; };
 		BE5540CAF5717E62EF3F28E8 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		D3E626B83FD5DC2AEB144BB0 /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		D4AD72D510C6BC8691781F42 /* LocalFlowApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFlowApp.swift; sourceTree = "<group>"; };
+		DB014DC10D16B7AF64C2A969 /* TranscriberTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriberTests.swift; sourceTree = "<group>"; };
 		DB3E9541B269457C1F3F8855 /* CoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -67,6 +81,7 @@
 				3798483711A2EBB10A4F01FF /* LocalFlow */,
 				DF5C754D02510C7DA43FB148 /* LocalFlowBench */,
 				97310CB5231ACBB12C655FE2 /* LocalFlowCoreTests */,
+				71E336B6AF260DEE2AD54918 /* LocalFlowInterfaceTests */,
 				F984A78D41A0AB3E3D738E96 /* Packages */,
 				3DEAF320E10E073E5FBC1D23 /* Resources */,
 				DEB5BD1D19CC1FB437322297 /* Products */,
@@ -77,7 +92,11 @@
 			isa = PBXGroup;
 			children = (
 				BE5540CAF5717E62EF3F28E8 /* AppModel.swift */,
+				3D43FA4FBEBBA5D5E21A1069 /* AudioPlayback.swift */,
+				6841E2DBBB034738DCFEA434 /* DiaryView.swift */,
+				73284D85DE9F90AF57695193 /* LiveTranscriptView.swift */,
 				D4AD72D510C6BC8691781F42 /* LocalFlowApp.swift */,
+				25DCB08E0CE2C10BC1E6A89A /* SettingsView.swift */,
 				39FDC656F128B9400E0EC928 /* SystemIntegration.swift */,
 				D3E626B83FD5DC2AEB144BB0 /* Views.swift */,
 			);
@@ -93,10 +112,20 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		71E336B6AF260DEE2AD54918 /* LocalFlowInterfaceTests */ = {
+			isa = PBXGroup;
+			children = (
+				33A52AFE244900698303D55F /* LiveTranscriptTests.swift */,
+			);
+			name = LocalFlowInterfaceTests;
+			path = Tests/LocalFlowInterfaceTests;
+			sourceTree = "<group>";
+		};
 		97310CB5231ACBB12C655FE2 /* LocalFlowCoreTests */ = {
 			isa = PBXGroup;
 			children = (
 				DB3E9541B269457C1F3F8855 /* CoreTests.swift */,
+				DB014DC10D16B7AF64C2A969 /* TranscriberTests.swift */,
 			);
 			name = LocalFlowCoreTests;
 			path = Tests/LocalFlowCoreTests;
@@ -108,6 +137,7 @@
 				8040A37B08BE8E069A106059 /* LocalFlow.app */,
 				4E71784E66C848355653965F /* LocalFlowBench */,
 				3A6F373F490E374717B1F6C6 /* LocalFlowCoreTests.xctest */,
+				73BBEBD5F3CD77FFEAB4FFA2 /* LocalFlowInterfaceTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -132,6 +162,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		2F67868198C59AE5AA16E6EA /* LocalFlowInterfaceTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B387E06DA6124FCD6D83104B /* Build configuration list for PBXNativeTarget "LocalFlowInterfaceTests" */;
+			buildPhases = (
+				0330101A7489A0E7EBFCBEEC /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LocalFlowInterfaceTests;
+			packageProductDependencies = (
+			);
+			productName = LocalFlowInterfaceTests;
+			productReference = 73BBEBD5F3CD77FFEAB4FFA2 /* LocalFlowInterfaceTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		5DCE169775731369C5EFE42B /* LocalFlowCoreTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 3D5A1EBCF96A034888B0346E /* Build configuration list for PBXNativeTarget "LocalFlowCoreTests" */;
@@ -199,6 +246,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					2F67868198C59AE5AA16E6EA = {
+						ProvisioningStyle = Manual;
+					};
 					5DCE169775731369C5EFE42B = {
 						ProvisioningStyle = Manual;
 					};
@@ -227,6 +277,7 @@
 				F6E6C043EB0325F6A9544DE2 /* LocalFlow */,
 				85D48F438FAAAA3413136EE2 /* LocalFlowBench */,
 				5DCE169775731369C5EFE42B /* LocalFlowCoreTests */,
+				2F67868198C59AE5AA16E6EA /* LocalFlowInterfaceTests */,
 			);
 		};
 /* End PBXProject section */
@@ -243,6 +294,15 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		0330101A7489A0E7EBFCBEEC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C81FD7B984D761C959AB31FD /* LiveTranscriptTests.swift in Sources */,
+				DF27CFCDCB49C2D80D2E6C16 /* LiveTranscriptView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		6E03EB983C0AE6A23E8D5BB3 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -256,6 +316,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E45955EB14AD0120B3D8B142 /* CoreTests.swift in Sources */,
+				A1D4AC27EB1BFC1CB0E1D002 /* TranscriberTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -264,7 +325,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				194F8EB804FD2B579B658F8D /* AppModel.swift in Sources */,
+				3BED8ACF93DF1887465842F5 /* AudioPlayback.swift in Sources */,
+				D987F1C5B880CABB817A4F74 /* DiaryView.swift in Sources */,
+				2F33F1FBB0F13A4050D04502 /* LiveTranscriptView.swift in Sources */,
 				92379FF4AC26F139B686A2D0 /* LocalFlowApp.swift in Sources */,
+				B09185F73404080301B856D3 /* SettingsView.swift in Sources */,
 				A9A230CEFFAEF1B3B4CD5053 /* SystemIntegration.swift in Sources */,
 				D6F09D6F166909093D129367 /* Views.swift in Sources */,
 			);
@@ -411,6 +476,25 @@
 			};
 			name = Debug;
 		};
+		9C4554179D24291C3CA52222 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.beiev.LocalFlowInterfaceTests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
 		AE83E616B7CF00C8A81FF089 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -474,6 +558,25 @@
 			};
 			name = Debug;
 		};
+		C671716DA5DD9208EC727C7C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.beiev.LocalFlowInterfaceTests;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 		D445B16FA6C6959F8D322265 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -525,6 +628,15 @@
 			buildConfigurations = (
 				8F4DE233C91F747AD7A7A9DE /* Debug */,
 				0679023EBC05EE300A799E8B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B387E06DA6124FCD6D83104B /* Build configuration list for PBXNativeTarget "LocalFlowInterfaceTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9C4554179D24291C3CA52222 /* Debug */,
+				C671716DA5DD9208EC727C7C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

@@ -1,5 +1,6 @@
 import Foundation
 import LocalFlowCore
+import FluidAudio
 
 @main
 struct Bench {
@@ -31,6 +32,40 @@ struct Bench {
                 print("elapsed_s=\(Date().timeIntervalSince(started)) cold_s=\(await engine.coldStartSeconds) footprint_mb=\(ProcessMetrics.footprintMB)")
                 await engine.unload()
                 print("after_unload_mb=\(ProcessMetrics.footprintMB)")
+            case "pipeline":
+                guard args.count >= 3 else { throw LocalFlowError.message("pipeline AUDIO OUTPUT.json") }
+                let session = RecordingSession(kind: .dictation)
+                let directory = AppPaths.audio(session.id)
+                try AudioFiles.importFile(URL(fileURLWithPath: args[1]), id: session.id)
+                defer { try? FileManager.default.removeItem(at: directory) }
+                let store = try Store(url: directory.appendingPathComponent("benchmark.sqlite"))
+                let speech = SpeechEngine(); let editor = TextEngine(); let start = Date()
+                let transcript = try await SessionTranscriber(recognizer: speech, store: store).transcribe(session, compact: false)
+                let transcribed = Date()
+                let edited = try await editor.edit(transcript.rawText, mode: .clean, dictionary: [])
+                let delivered = TextSafety.deliveryText(original: transcript.rawText, edited: edited.text, requiresReview: edited.guarded, dictionary: [])
+                let row: [String: Any] = ["duration": transcript.duration, "asr_s": transcribed.timeIntervalSince(start), "edit_s": Date().timeIntervalSince(transcribed), "raw": transcript.rawText, "edited": edited.text, "delivered": delivered, "guarded": edited.guarded, "footprint_mb": ProcessMetrics.footprintMB]
+                try JSONSerialization.data(withJSONObject: row, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: args[2]), options: .atomic)
+                print("duration=\(transcript.duration) delivered_characters=\(delivered.count) guarded=\(edited.guarded)")
+                await speech.unload(); await editor.unload()
+            case "edit-modes":
+                let engine = TextEngine()
+                let samples = [
+                    "Эээ, нам нужно, нам нужно проверить Локэлфлоу. Бюджет 250000 рублей. Данные не отправляем в облако.",
+                    "Сегодня как-то устал. А ещё придумал: хочу вести дневник. С утра был созвон, потом прогулка. Вернусь к дневнику: хочется короткие заметки, от первого лица. На прогулке стало легче."
+                ]
+                var rows: [[String: Any]] = []
+                for mode: ProcessingMode in [.clean, .compose] {
+                    for input in samples {
+                        let start = Date()
+                        let result = try await engine.edit(input, mode: mode, dictionary: [.init(heard: "Локэлфлоу", preferred: "LocalFlow")], style: "Сохраняй личный тон, без канцелярита.")
+                        rows.append(["mode": mode.rawValue, "input": input, "output": result.text, "requires_review": result.guarded, "elapsed_s": Date().timeIntervalSince(start)])
+                    }
+                }
+                let data = try JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys])
+                if args.count > 1 { try data.write(to: URL(fileURLWithPath: args[1]), options: .atomic) }
+                print(String(decoding: data, as: UTF8.self))
+                await engine.unload()
             case "edit":
                 let engine = TextEngine(); let start = Date()
                 let text = args.dropFirst().joined(separator: " ")
@@ -87,12 +122,35 @@ struct Bench {
                 guard tail.count == 16000, abs((tail.first ?? 0) - 0.9) < 0.001 else { throw LocalFlowError.message("Storage tail mismatch") }
                 peak = max(peak, ProcessMetrics.footprintMB)
                 print("duration_s=7200 parts=240 tail_verified=true elapsed_s=\(Date().timeIntervalSince(start)) baseline_mb=\(baseline) peak_mb=\(peak)")
+            case "voices":
+                guard args.count > 2 else { throw LocalFlowError.message("voices FIRST SECOND") }
+                let engine = SpeakerEngine()
+                let first = try await engine.annotate(RecordingSession(kind: .meeting), audio: URL(fileURLWithPath: args[1]), profiles: [])
+                let names = ["Milena", "Daniel", "Thomas", "Anna"]
+                guard first.embeddings.count == names.count else { throw LocalFlowError.message("First fixture speaker count mismatch") }
+                let profiles = zip(first.embeddings.keys.sorted(), names).map { VoiceProfile(name: $0.1, embedding: first.embeddings[$0.0]!) }
+                let second = try await engine.annotate(RecordingSession(kind: .meeting), audio: URL(fileURLWithPath: args[2]), profiles: profiles)
+                let matched = second.embeddings.keys.sorted().map { second.speakers[$0] ?? "unknown" }
+                print("matched=\(matched)")
+                guard matched == ["Anna", "Milena", "Daniel", "Thomas"] else { throw LocalFlowError.message("Voice profile reorder mismatch") }
+                var manual = RecordingSession(kind: .meeting); manual.speakers["S1"] = "Ручное имя"
+                let preserved = try await engine.annotate(manual, audio: URL(fileURLWithPath: args[2]), profiles: profiles)
+                guard preserved.speakers["S1"] == "Ручное имя" else { throw LocalFlowError.message("Manual speaker name overwritten") }
+                print("reorder_verified=true manual_name_preserved=true")
             case "diarize":
                 guard args.count > 1 else { return }
-                let start = Date(); var session = RecordingSession(kind: .meeting)
-                if args.count > 2 { session.expectedRemoteSpeakers = Int(args[2]) }
-                let result = try await SpeakerEngine().annotate(session, audio: URL(fileURLWithPath: args[1]), profiles: [])
-                print("speakers=\(result.embeddings.count) elapsed_s=\(Date().timeIntervalSince(start)) footprint_mb=\(ProcessMetrics.footprintMB)")
+                ModelHub.offlineMode = true
+                let start = Date()
+                var config = OfflineDiarizerConfig.default
+                if args.count > 2, let count = Int(args[2]), count > 0 { config = config.withSpeakers(exactly: count) }
+                if args.count > 3, let threshold = Double(args[3]) { config.clustering.threshold = threshold }
+                let manager = OfflineDiarizerManager(config: config)
+                manager.initialize(models: try await OfflineDiarizerModels.load(from: AppPaths.models))
+                let result = try await manager.process(URL(fileURLWithPath: args[1]))
+                let spans = result.segments.map { ["speaker": $0.speakerId, "start": $0.startTimeSeconds, "end": $0.endTimeSeconds] as [String: Any] }
+                let json = try JSONSerialization.data(withJSONObject: spans, options: [.sortedKeys])
+                print("spans=" + String(decoding: json, as: UTF8.self))
+                print("speakers=\(result.speakerDatabase?.count ?? 0) elapsed_s=\(Date().timeIntervalSince(start)) footprint_mb=\(ProcessMetrics.footprintMB)")
             default: print("LocalFlowBench install asr8 asr4 editor speakers | transcribe FILE [--compact] | edit TEXT | diarize FILE")
             }
         } catch { FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8)); exit(1) }

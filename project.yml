@@ -58,3 +58,16 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_IDENTITY: '-'
         CODE_SIGN_STYLE: Manual
+
+  LocalFlowInterfaceTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - Tests/LocalFlowInterfaceTests
+      - Sources/LocalFlow/LiveTranscriptView.swift
+    settings:
+      base:
+        SWIFT_VERSION: '5.0'
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_IDENTITY: '-'
+        CODE_SIGN_STYLE: Manual

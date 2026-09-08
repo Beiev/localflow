@@ -82,6 +82,8 @@ private final class FileTransfer: NSObject, URLSessionDownloadDelegate, @uncheck
     private var session: URLSession?
     private var task: URLSessionDownloadTask?
     private var fileError: Error?
+    private let taskLock = NSLock()
+    private var cancelled = false
     init(destination: URL) { self.destination = destination }
     func download(_ url: URL, progress: @escaping @Sendable (Int64) -> Void) async throws {
         self.progress = progress
@@ -92,11 +94,18 @@ private final class FileTransfer: NSObject, URLSessionDownloadDelegate, @uncheck
                 config.timeoutIntervalForRequest = 60; config.timeoutIntervalForResource = 7200
                 let session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
                 self.session = session
+                self.taskLock.lock()
                 if let data = try? Data(contentsOf: resumeURL) { task = session.downloadTask(withResumeData: data) }
                 else { task = session.downloadTask(with: url) }
-                task?.resume()
+                let wasCancelled = cancelled
+                let created = task
+                self.taskLock.unlock()
+                if wasCancelled { created?.cancel() } else { created?.resume() }
             }
-        } onCancel: { self.task?.cancel(byProducingResumeData: { data in if let data { try? data.write(to: self.resumeURL, options: .atomic) } }) }
+        } onCancel: {
+            self.taskLock.lock(); self.cancelled = true; let task = self.task; self.taskLock.unlock()
+            task?.cancel(byProducingResumeData: { data in if let data { try? data.write(to: self.resumeURL, options: .atomic) } })
+        }
     }
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) { progress?(totalBytesWritten) }
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {

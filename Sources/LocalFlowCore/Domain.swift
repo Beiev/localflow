@@ -5,8 +5,8 @@ public enum SessionKind: String, Codable, CaseIterable, Sendable {
     public var title: String { switch self { case .dictation: "Диктовка"; case .note: "Заметка"; case .meeting: "Созвон" } }
 }
 public enum ProcessingMode: String, Codable, CaseIterable, Sendable {
-    case clean, summary, specification, tasks
-    public var title: String { switch self { case .clean: "Связный текст"; case .summary: "Краткое резюме"; case .specification: "ТЗ"; case .tasks: "Список задач" } }
+    case clean, compose, summary, specification, tasks
+    public var title: String { switch self { case .clean: "Аккуратно"; case .compose: "Связный текст"; case .summary: "Краткое резюме"; case .specification: "ТЗ"; case .tasks: "Список задач" } }
 }
 public struct TranscriptSegment: Codable, Identifiable, Equatable, Sendable {
     public var id: UUID
@@ -25,7 +25,8 @@ public struct TextVersion: Codable, Identifiable, Sendable {
     public var date = Date()
     public var mode: ProcessingMode
     public var text: String
-    public init(mode: ProcessingMode, text: String) { self.mode = mode; self.text = text }
+    public var label: String?
+    public init(mode: ProcessingMode, text: String, label: String? = nil) { self.mode = mode; self.text = text; self.label = label }
 }
 public struct RecordingSession: Codable, Identifiable, Sendable {
     public var id = UUID()
@@ -40,13 +41,27 @@ public struct RecordingSession: Codable, Identifiable, Sendable {
     public var error: String?
     public var transcribedThrough: [String: Double]?
     public var pendingMode: ProcessingMode?
+    public var noteDescription: String?
+    public var editingMode: ProcessingMode?
+    public var editingStyle: String?
     public var expectedRemoteSpeakers: Int?
     public var speakers: [String: String] = [:]
     public var embeddings: [String: [Float]] = [:]
     public init(kind: SessionKind) { self.kind = kind; self.title = kind.title + " " + Date().formatted(date: .abbreviated, time: .shortened) }
+    public static func draftNote() -> RecordingSession {
+        var note = RecordingSession(kind: .note)
+        note.state = "draft"; note.title = "Заметка " + Date().formatted(date: .abbreviated, time: .omitted)
+        return note
+    }
     public var rawText: String { segments.sorted { $0.start < $1.start }.map(\.text).joined(separator: " ") }
+    public func speakerName(_ id: String?, source: String) -> String {
+        if let id, let name = speakers[id], !name.isEmpty { return name }
+        if source == "microphone" { return "Я" }
+        if let id, let index = embeddings.keys.sorted().firstIndex(of: id) { return "Участник \(index + 1)" }
+        return "Собеседник"
+    }
     public var referencedText: String {
-        segments.sorted { $0.start < $1.start }.map { "[\($0.timestamp)] \(speakers[$0.speaker ?? ""] ?? $0.speaker ?? ($0.source == "microphone" ? "Я" : "Собеседник")): \($0.text)" }.joined(separator: "\n")
+        segments.sorted { $0.start < $1.start }.map { "[\($0.timestamp)] \(speakerName($0.speaker, source: $0.source)): \($0.text)" }.joined(separator: "\n")
     }
 }
 public struct DictionaryEntry: Codable, Identifiable, Sendable {
@@ -60,6 +75,15 @@ public struct VoiceProfile: Codable, Identifiable, Sendable {
     public var name: String
     public var embedding: [Float]
     public init(name: String, embedding: [Float]) { self.name = name; self.embedding = embedding }
+}
+public struct EvidenceExcerpt: Identifiable, Sendable {
+    public var id: UUID { segment.id }
+    public var recordingID: UUID
+    public var sourceIndex: Int
+    public var segment: TranscriptSegment
+    public init(recordingID: UUID, sourceIndex: Int, segment: TranscriptSegment) {
+        self.recordingID = recordingID; self.sourceIndex = sourceIndex; self.segment = segment
+    }
 }
 public struct SearchHit: Identifiable, Sendable {
     public var id: UUID { session.id }

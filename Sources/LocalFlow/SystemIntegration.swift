@@ -7,12 +7,21 @@ final class GlobalShortcut {
     private var tap: CFMachPort?
     private var runSource: CFRunLoopSource?
     var onToggle: (() -> Void)?
+    var onMeeting: (() -> Void)?
     var onCancel: (() -> Void)?
     var recording = false
     var enabled = false
+    var isInstalled: Bool { tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false }
+    var permissionStatus: String {
+        let trusted = AXIsProcessTrusted()
+        if isInstalled { return "⌘B: работает · Универсальный доступ: \(trusted ? "подтверждён" : "macOS пока не подтвердила")" }
+        if trusted { return "Универсальный доступ подтверждён, но обработчик клавиш не запущен. Нажмите «Проверить ⌘B»." }
+        return "macOS не подтвердила доступ этой сборке. Если LocalFlow уже включён в настройках, удалите его из списка и добавьте заново из ~/Applications/LocalFlow.app."
+    }
     func install() -> Bool {
-        guard tap == nil else { return true }
-        guard AXIsProcessTrusted() else { return false }
+        if let tap { CGEvent.tapEnable(tap: tap, enable: true); return CGEvent.tapIsEnabled(tap: tap) }
+        // Try the protected operation itself: the permission preflight may be stale.
+        // macOS still enforces access when creating this event tap.
         let mask = (1 << CGEventType.keyDown.rawValue)
         let pointer = Unmanaged.passUnretained(self).toOpaque()
         tap = CGEvent.tapCreate(tap: .cgSessionEventTap, place: .headInsertEventTap, options: .defaultTap, eventsOfInterest: CGEventMask(mask), callback: { _, type, event, context in
@@ -22,10 +31,13 @@ final class GlobalShortcut {
                 if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput { if let tap = owner.tap { CGEvent.tapEnable(tap: tap, enable: true) }; return Unmanaged.passUnretained(event) }
                 guard owner.enabled else { return Unmanaged.passUnretained(event) }
                 let key = event.getIntegerValueField(.keyboardEventKeycode)
-                if key == 11 && CGEventSource.keyState(.combinedSessionState, key: 55) && !event.flags.contains(.maskAlternate) && !event.flags.contains(.maskControl) && !event.flags.contains(.maskShift) {
-                    if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 { owner.onToggle?() }; return nil
+                if ShortcutChord.isLeftCommandB(keyCode: key, flags: event.flags.rawValue) {
+                    if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 { Task { @MainActor in owner.onToggle?() } }; return nil
                 }
-                if key == 53 && owner.recording { owner.onCancel?(); return nil }
+                if ShortcutChord.isMeeting(keyCode: key, flags: event.flags.rawValue) {
+                    if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 { Task { @MainActor in owner.onMeeting?() } }; return nil
+                }
+                if key == 53 && owner.recording { Task { @MainActor in owner.onCancel?() }; return nil }
                 return Unmanaged.passUnretained(event)
             }
         }, userInfo: pointer)
@@ -33,7 +45,7 @@ final class GlobalShortcut {
         runSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), runSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        return true
+        return CGEvent.tapIsEnabled(tap: tap)
     }
     func requestPermission() { let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary; _ = AXIsProcessTrustedWithOptions(options) }
 }
@@ -43,7 +55,7 @@ final class TextInsertion {
     private var target: Target?
     func capture() { target = Self.focused() }
     private static func focused() -> Target? {
-        guard AXIsProcessTrusted(), let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
+        guard let app = NSWorkspace.shared.frontmostApplication, app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
         let element = AXUIElementCreateApplication(app.processIdentifier)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, kAXFocusedUIElementAttribute as CFString, &value) == .success, let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
@@ -79,7 +91,9 @@ final class TextInsertion {
 @MainActor
 final class OverlayController: NSObject, NSWindowDelegate {
     private var panel: NSPanel?
+    private var receiptTask: Task<Void, Never>?
     func show(model: AppModel) {
+        receiptTask?.cancel()
         if panel == nil {
             let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 440, height: 190), styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
             panel.level = .floating; panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -93,7 +107,11 @@ final class OverlayController: NSObject, NSWindowDelegate {
         let origin = saved.flatMap { p in NSScreen.screens.contains { $0.visibleFrame.contains(NSRect(origin: p, size: panel!.frame.size)) } ? p : nil } ?? NSPoint(x: screen.visibleFrame.midX - 220, y: screen.visibleFrame.minY + 32)
         panel?.setFrameOrigin(origin); panel?.orderFrontRegardless()
     }
-    func hide() { panel?.orderOut(nil) }
+    func showReceipt(model: AppModel) {
+        show(model: model)
+        receiptTask = Task { try? await Task.sleep(for: .seconds(10)); guard !Task.isCancelled else { return }; panel?.orderOut(nil) }
+    }
+    func hide() { receiptTask?.cancel(); panel?.orderOut(nil) }
     func windowDidMove(_ notification: Notification) { if let panel { UserDefaults.standard.set(NSStringFromPoint(panel.frame.origin), forKey: "overlayOrigin") } }
 }
 import SwiftUI

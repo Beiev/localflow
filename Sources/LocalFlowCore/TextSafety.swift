@@ -8,6 +8,17 @@ public enum TextSafety {
             return regex.stringByReplacingMatches(in: result, range: NSRange(result.startIndex..., in: result), withTemplate: NSRegularExpression.escapedTemplate(for: entry.preferred))
         }
     }
+    /// Deterministic fallback: no paraphrasing, number conversion, or negation removal.
+    public static func minimalCleanup(_ text: String, dictionary: [DictionaryEntry]) -> String {
+        let source = applyDictionary(text, entries: dictionary)
+        return source.replacingOccurrences(of: "(?i)(?<![\\p{L}\\p{N}])(?:э{2,}|м{3,})(?![\\p{L}\\p{N}])[, ]*", with: "", options: .regularExpression)
+            .replacingOccurrences(of: "[ \\t]{2,}", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    public static func deliveryText(original: String, edited: String?, requiresReview: Bool, dictionary: [DictionaryEntry]) -> String {
+        if let edited, !requiresReview, !edited.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return edited }
+        return minimalCleanup(original, dictionary: dictionary)
+    }
     public static func validateEdit(original: String, edited: String) -> Bool {
         guard !edited.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return original.isEmpty }
         func matches(_ pattern: String, _ text: String) -> [String] {
@@ -26,6 +37,12 @@ public enum TextSafety {
         if original.count > 100 && edited.count < original.count / 2 { return false }
         return edited.count <= max(200, original.count * 2)
     }
+    /// Keep the edited proposal visible; suspicious changes require review instead of a silent rollback.
+    public static func reviewEdit(original: String, edited: String, mode: ProcessingMode) -> (text: String, requiresReview: Bool) {
+        guard !edited.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return (original, !original.isEmpty) }
+        let checked = mode == .clean || mode == .compose
+        return (edited, checked && !validateEdit(original: original, edited: edited))
+    }
     public static func chunks(_ text: String, maxCharacters: Int = 6000) -> [String] {
         var chunks: [String] = []; var current = ""
         for line in text.components(separatedBy: .newlines) {
@@ -37,6 +54,17 @@ public enum TextSafety {
         }
         if !current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { chunks.append(current) }
         return chunks
+    }
+    public static func hasValidCitations(_ answer: String, evidence: String) -> Bool {
+        func matches(_ pattern: String, in text: String) -> Set<String> {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: .anchorsMatchLines) else { return [] }
+            return Set(regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { match in Range(match.range, in: text).map { String(text[$0]).trimmingCharacters(in: .whitespaces) } })
+        }
+        let cited = matches("\\[\\d+\\]", in: answer)
+        let available = matches("^\\[\\d+\\]", in: evidence)
+        let times = matches("\\[\\d{2,}:\\d{2}\\]", in: answer)
+        let sourceTimes = matches("\\[\\d{2,}:\\d{2}\\]", in: evidence)
+        return !cited.isEmpty && cited.isSubset(of: available) && times.isSubset(of: sourceTimes)
     }
     public static func cosine(_ a: [Float], _ b: [Float]) -> Float {
         guard a.count == b.count, !a.isEmpty else { return 0 }
@@ -94,5 +122,21 @@ public enum TranscriptAssembly {
             } else { grouped.append(word) }
         }
         return grouped
+    }
+}
+
+/// Device-specific command bits are supplied with the key event (IOLLEvent.h).
+/// Do not poll global keyboard state: that has separate Input Monitoring semantics.
+public enum ShortcutChord {
+    public static func isMeeting(keyCode: Int64, flags: UInt64) -> Bool {
+        let required: UInt64 = (1 << 20) | (1 << 17) | 0x8 // left Cmd + Shift + M
+        return keyCode == 46 && flags & required == required && flags & ((1 << 18) | (1 << 19)) == 0
+    }
+
+    public static func isLeftCommandB(keyCode: Int64, flags: UInt64) -> Bool {
+        let command: UInt64 = 1 << 20
+        let leftCommand: UInt64 = 0x8
+        let conflicting: UInt64 = (1 << 17) | (1 << 18) | (1 << 19) // shift/control/option
+        return keyCode == 11 && flags & command != 0 && flags & leftCommand != 0 && flags & conflicting == 0
     }
 }

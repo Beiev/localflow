@@ -7,7 +7,7 @@ import LocalFlowCore
 @MainActor
 final class AppModel: ObservableObject {
     @Published var sessions: [RecordingSession] = []
-    @Published var selection: UUID? { didSet { if oldValue != selection { answer = ""; answerSources = [] } } }
+    @Published var selection: UUID? { didSet { if oldValue != selection { cancelQuestion(); answer = ""; answerSources = []; answerExcerpts = [] } } }
     @Published var active: RecordingSession?
     @Published var status = "Готов к работе"
     @Published var error: String?
@@ -29,10 +29,13 @@ final class AppModel: ObservableObject {
     @Published var installed: Set<String> = []
     @Published var answer = ""
     @Published var answerSources: [RecordingSession] = []
+    @Published var answerExcerpts: [EvidenceExcerpt] = []
     @Published var asking = false
     @Published var modelStatus = "Модели не загружены в память"
     @Published var metrics = ""
     @Published var isStarting = false
+    @Published var shortcutStatus = "Шорткат выключен"
+    @Published var shortcutLastEvent = "Сочетание ещё не нажимали в этом запуске"
     let store: Store
     let speech = SpeechEngine()
     let editor = TextEngine()
@@ -42,6 +45,8 @@ final class AppModel: ObservableObject {
     let insertion = TextInsertion()
     let overlay = OverlayController()
     private var processingTask: Task<Void, Never>?
+    private var questionTask: Task<Void, Never>?
+    private var questionRequestID = UUID()
     private var currentJobID: UUID?
     private var resumeAfterDictation: [UUID] = []
     private var preempting = false
@@ -54,15 +59,28 @@ final class AppModel: ObservableObject {
     private var committed: [TranscriptSegment] = []
     private var nextWindowStart: [String: Double] = [:]
     private var dictationDuringMeeting: (start: Double, target: UUID)?
-    private var player: AVAudioPlayer?
+    let playback = AudioPlayback()
+    @Published var isPlaying = false
     private var pressureSource: DispatchSourceMemoryPressure?
     private var maintenanceTimer: Timer?
+    var defaultEditingMode: ProcessingMode { UserDefaults.standard.string(forKey: "editingMode") == "compose" ? .compose : .clean }
+    var editingStyle: String { UserDefaults.standard.string(forKey: "editingStyle") ?? "" }
+    func createNote() {
+        guard active == nil, !processing, !isStarting else { return }
+        let note = RecordingSession.draftNote()
+        do { try store.save(note); refresh(); selection = note.id; showMain() }
+        catch { self.error = error.localizedDescription }
+    }
+    func startNote(_ note: RecordingSession) { start(.note, existing: note) }
     var compact: Bool { UserDefaults.standard.bool(forKey: "compactASR") }
     var selectedSession: RecordingSession? { sessions.first { $0.id == selection } }
     var isRecording: Bool { active != nil && !processing }
-    init() {
-        do { try AppPaths.create(); store = try Store() } catch { fatalError("LocalFlow archive: \(error.localizedDescription)") }
+    init() throws {
+        try AppPaths.create()
+        store = try Store()
         refresh()
+        playback.onChange = { [weak self] playing in self?.isPlaying = playing }
+        playback.onError = { [weak self] message in self?.error = message }
         let pressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
         pressure.setEventHandler { [weak self] in Task { @MainActor in
             guard let self else { return }
@@ -73,12 +91,17 @@ final class AppModel: ObservableObject {
         pressure.resume(); pressureSource = pressure
         capture.onFrame = { [weak self] frame in Task { @MainActor in self?.receive(frame) } }
         capture.onError = { [weak self] error in Task { @MainActor in self?.error = error; self?.stop() } }
-        shortcut.onToggle = { [weak self] in self?.toggleDictation() }
+        shortcut.onToggle = { [weak self] in
+            self?.shortcutLastEvent = "Последнее нажатие ⌘B: " + Date().formatted(date: .omitted, time: .standard)
+            self?.toggleDictation()
+        }
+        shortcut.onMeeting = { [weak self] in self?.toggleMeeting() }
         shortcut.onCancel = { [weak self] in self?.cancel() }
         shortcut.enabled = UserDefaults.standard.bool(forKey: "shortcutEnabled")
-        _ = shortcut.install()
+        if shortcut.enabled { _ = shortcut.install() }
+        shortcutStatus = shortcut.enabled ? shortcut.permissionStatus : "Шорткат выключен"
         // No inference on startup. Only recover persisted work state.
-        for var session in sessions where ["recording", "processing"].contains(session.state) {
+        for var session in sessions where ["recording", "processing", "queued"].contains(session.state) {
             session.state = "interrupted"; session.error = "Обработка прервана. Аудио сохранено; нажмите «Повторить обработку»."; try? store.save(session)
         }
         do { try store.pruneAudio() } catch { self.error = error.localizedDescription }
@@ -89,7 +112,7 @@ final class AppModel: ObservableObject {
                 do { try self.store.pruneAudio() } catch { self.error = error.localizedDescription }
             }
         }
-        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh() } }
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.refresh(); self?.refreshShortcut() } }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.stop(); await self?.unloadModels() } }
     }
     func refresh() {
@@ -97,7 +120,15 @@ final class AppModel: ObservableObject {
         installed = Set(ModelCatalog.packages.filter(\.installed).map(\.id))
     }
     func showMain() { NSApp.activate(ignoringOtherApps: true); NSApp.windows.first { $0.identifier?.rawValue.hasPrefix("main-") == true || $0.title == "LocalFlow" }?.makeKeyAndOrderFront(nil) }
-    func enableShortcut() { shortcut.requestPermission(); shortcut.enabled = true; UserDefaults.standard.set(true, forKey: "shortcutEnabled"); if !shortcut.install() { error = "Разрешите LocalFlow в Универсальном доступе, затем нажмите кнопку ещё раз. Отключите ⌘B в Handy, чтобы приложения не записывали одновременно." } }
+    func refreshShortcut() {
+        shortcut.enabled = UserDefaults.standard.bool(forKey: "shortcutEnabled")
+        if shortcut.enabled { _ = shortcut.install() }
+        shortcutStatus = shortcut.enabled ? shortcut.permissionStatus : "Шорткат выключен"
+    }
+    func enableShortcut() {
+        UserDefaults.standard.set(true, forKey: "shortcutEnabled")
+        refreshShortcut()
+    }
     func toggleDictation() {
         guard !isStarting, !preempting else { return }
         if processing, let job = currentJobID, active?.kind != .dictation {
@@ -115,29 +146,39 @@ final class AppModel: ObservableObject {
             return
         }
         if let active, active.kind == .meeting, !processing {
-            if let range = dictationDuringMeeting { dictationDuringMeeting = nil; processMeetingDictation(since: range.start) }
+            if let range = dictationDuringMeeting { dictationDuringMeeting = nil; overlay.hide(); processMeetingDictation(since: range.start) }
             else { insertion.capture(); dictationDuringMeeting = (elapsed, active.id); overlay.show(model: self); status = "Диктовка во время созвона" }
         } else if isRecording { stop() }
         else if !processing { insertion.capture(); start(.dictation) }
     }
-    func start(_ kind: SessionKind) {
+    func toggleMeeting() {
+        if active?.kind == .meeting && isRecording { stop() }
+        else if active == nil && !processing && !isStarting { applicationPID = 0; start(.meeting) }
+    }
+    func start(_ kind: SessionKind, existing: RecordingSession? = nil) {
         guard active == nil, !isStarting, !processing else { return }
         guard installed.contains(compact ? "asr4" : "asr8") else { error = "Откройте «Модели» и загрузите распознаватель. Для связного текста загрузите также редактор."; showMain(); return }
         let app = kind == .meeting ? applications.first { $0.processID == applicationPID } : nil
-        if kind == .meeting && app == nil { error = "Выберите приложение созвона"; return }
+
+        if let existing, existing.duration > 0, !FileManager.default.fileExists(atPath: AppPaths.audio(existing.id).appendingPathComponent("parts.json").path) {
+            error = "Аудио этой заметки уже удалено. Создайте новую заметку; сохранённый текст останется в архиве."; return
+        }
+        cancelQuestion(); playback.stop()
         isStarting = true
         Task {
-            var session = RecordingSession(kind: kind)
-            if kind == .meeting && expectedRemoteSpeakers > 0 { session.expectedRemoteSpeakers = expectedRemoteSpeakers }
+            var session = existing ?? RecordingSession(kind: kind)
+            session.state = "recording"; session.error = nil; session.transcribedThrough = nil
+            session.editingMode = defaultEditingMode; session.editingStyle = editingStyle
+            if kind == .meeting { session.expectedRemoteSpeakers = nil }
             do {
                 try store.save(session)
-                active = session; selection = session.id; buffers = [:]; hypotheses = [:]; committed = []; nextWindowStart = [:]
-                stableText = ""; draftText = ""; liveSegments = []; liveTails = [:]; finalText = ""; elapsed = 0; paused = false; startDate = Date()
-                status = "Запускаю микрофон…"
-                try await capture.start(id: session.id, application: app)
-                shortcut.recording = true; status = "Слушаю…"; overlay.show(model: self)
+                active = session; selection = session.id; buffers = [:]; hypotheses = [:]; committed = session.segments; nextWindowStart = [:]
+                stableText = ""; draftText = ""; liveSegments = []; liveTails = [:]; finalText = ""; elapsed = session.duration; paused = false; startDate = Date().addingTimeInterval(-session.duration)
+                status = "Запускаю микрофон…"; if kind != .note { overlay.show(model: self) }
+                try await capture.start(id: session.id, application: app, captureSystemAudio: kind == .meeting, append: existing != nil && FileManager.default.fileExists(atPath: AppPaths.audio(session.id).appendingPathComponent("parts.json").path))
+                shortcut.recording = true; status = "Слушаю…"; if kind != .note { overlay.show(model: self) }
                 startLoops(); refresh()
-            } catch { active = nil; self.error = error.localizedDescription; var failed = session; failed.state = "interrupted"; failed.error = error.localizedDescription; try? store.save(failed); refresh() }
+            } catch { active = nil; overlay.hide(); self.error = error.localizedDescription; showMain(); var failed = session; failed.state = "interrupted"; failed.error = error.localizedDescription; try? store.save(failed); refresh() }
             isStarting = false
         }
     }
@@ -202,11 +243,15 @@ final class AppModel: ObservableObject {
             } catch { guard !Task.isCancelled else { return }; status = "Аудио сохраняется; расшифровку можно повторить"; self.error = error.localizedDescription; return }
         }
     }
-    func pause() { paused.toggle(); capture.setPaused(paused); status = paused ? "Пауза" : "Слушаю…" }
+    func pause() {
+        paused.toggle(); capture.setPaused(paused); status = paused ? "Пауза" : "Слушаю…"
+        if paused { Task { await scheduleUnload() } }
+    }
     func stop() {
         guard let session = active, !processing, !isStarting else { return }
+        overlay.hide()
         currentJobID = session.id
-        processing = true; status = "Завершаю расшифровку…"; shortcut.recording = false
+        processing = true; status = "Завершаю расшифровку…"; shortcut.recording = session.kind == .dictation
         liveTask?.cancel(); clockTask?.cancel(); dictationDuringMeeting = nil
         processingTask = Task {
             await capture.stop(); await liveTask?.value
@@ -215,9 +260,10 @@ final class AppModel: ObservableObject {
             catch {
                 saved = (try? store.sessions())?.first(where: { $0.id == saved.id }) ?? saved
                 saved.state = "interrupted"; saved.error = Task.isCancelled ? "Обработка приостановлена" : error.localizedDescription
-                try? store.save(saved); if !Task.isCancelled { self.error = error.localizedDescription }; status = "Аудио сохранено. Можно повторить обработку."
+                try? store.save(saved); if !Task.isCancelled { self.error = error.localizedDescription }; status = "Аудио сохранено · откройте архив для восстановления"
+                if !Task.isCancelled { overlay.showReceipt(model: self) }
             }
-            active = nil; processing = false; currentJobID = nil; refresh(); await scheduleUnload(); resumeQueued()
+            active = nil; processing = false; shortcut.recording = false; currentJobID = nil; refresh(); await scheduleUnload(); resumeQueued()
         }
     }
     func quit() {
@@ -233,6 +279,7 @@ final class AppModel: ObservableObject {
         }
     }
     func cancel() {
+        overlay.hide()
         if dictationDuringMeeting != nil { dictationDuringMeeting = nil; status = "Созвон продолжается"; return }
         guard active != nil || processing else { overlay.hide(); return }
         liveTask?.cancel(); clockTask?.cancel(); processingTask?.cancel(); shortcut.recording = false
@@ -249,46 +296,11 @@ final class AppModel: ObservableObject {
         if let mode = session.pendingMode { transform(session, mode: mode) } else { retry(session) }
     }
     func process(_ session: RecordingSession, insert: Bool = false) async throws {
-        var result = session; result.state = "processing"; result.error = nil
-        let parts = try AudioFiles.parts(session.id)
-        if result.transcribedThrough == nil { result.segments = []; result.transcribedThrough = [:] }
-        let sources = Set(parts.map(\.source)).sorted()
-        for source in sources {
-            let id = session.id
-            let url = try await Task.detached { try AudioFiles.joinedTrack(id, source: source) }.value
-            let duration = parts.filter { $0.source == source }.map { $0.start + $0.duration }.max() ?? 0
-            var center = result.transcribedThrough?[source] ?? 0
-            while center < duration {
-                try Task.checkCancellation()
-                let windowStart = max(0, center - 1)
-                let windowEnd = min(duration, center + 11)
-                let samples = try AudioFiles.read(url, from: windowStart, duration: windowEnd - windowStart)
-                if samples.isEmpty { break }
-                status = await speech.isLoaded ? "Распознаю запись…" : "Загружаю распознаватель…"
-                let recognition = try await speech.recognize(samples, compact: compact)
-                let boundaryEnd = min(duration, center + 10)
-                if !recognition.words.isEmpty {
-                    for var word in recognition.words {
-                        word.start += windowStart; word.end += windowStart
-                        let midpoint = (word.start + word.end)/2
-                        if midpoint >= center && (midpoint < boundaryEnd || boundaryEnd == duration) {
-                            word.source = source; word.speaker = source == "microphone" ? "Я" : nil
-                            result.segments.append(word)
-                        }
-                    }
-                } else if !recognition.text.isEmpty {
-                    throw LocalFlowError.message("Модель не вернула временные отметки. Аудио сохранено для повторной обработки.")
-                }
-                center += 10
-                result.transcribedThrough?[source] = center
-                result.duration = max(result.duration, duration)
-                try store.save(result)
-                status = "Расшифровка \(Int(min(center, duration)))/\(Int(duration)) с"
-            }
-            // The system track is reused by diarization; both analysis files are temporary.
-            if source != "system" { try? FileManager.default.removeItem(at: url) }
+        status = await speech.isLoaded ? "Распознаю запись…" : "Загружаю распознаватель…"
+        var result = try await SessionTranscriber(recognizer: speech, store: store).transcribe(session, compact: compact) { [weak self] current, total in
+            Task { @MainActor in self?.status = "Расшифровка \(Int(current))/\(Int(total)) с" }
         }
-        if result.kind == .meeting && installed.contains("speakers") {
+        if result.kind == .meeting && installed.contains("speakers") && result.segments.contains(where: { $0.source == "system" }) {
             status = "Разделяю голоса…"
             let id = result.id
             let url = try await Task.detached { try AudioFiles.joinedTrack(id, source: "system") }.value
@@ -298,30 +310,46 @@ final class AppModel: ObservableObject {
         }
         result.segments = TranscriptAssembly.group(result.segments)
         let raw = result.kind == .meeting ? result.referencedText : result.rawText
-        finalText = raw
+        finalText = TextSafety.minimalCleanup(raw, dictionary: dictionary)
+        var needsReview = false
         if !raw.isEmpty && installed.contains("editor") {
             status = "Редактирую…"
             do {
-                let mode: ProcessingMode = result.kind == .meeting ? .summary : .clean
-                let edit = try await editor.edit(raw, mode: mode, dictionary: dictionary)
-                result.versions.append(TextVersion(mode: mode, text: edit.text)); finalText = edit.text
-                if edit.guarded { result.error = "Некоторые фрагменты оставлены исходными: редактор изменил защищённые детали." }
+                let mode: ProcessingMode = result.kind == .meeting ? .summary : (result.editingMode ?? defaultEditingMode)
+                let edit = try await editor.edit(raw, mode: mode, dictionary: dictionary, style: result.editingStyle ?? editingStyle)
+                result.versions.append(TextVersion(mode: mode, text: edit.text))
+                finalText = TextSafety.deliveryText(original: raw, edited: edit.text, requiresReview: edit.guarded, dictionary: dictionary)
+                if edit.guarded { needsReview = true; result.error = "Редактор мог изменить смысл. Для вставки использована минимальная очистка; предложение редактора сохранено отдельной версией." }
             } catch { result.error = "Расшифровка сохранена. Редактор: \(error.localizedDescription)" }
         }
         try Task.checkCancellation()
+        if needsReview { result.versions.append(TextVersion(mode: .clean, text: finalText, label: "Минимальная очистка")) }
         result.state = "ready"; result.transcribedThrough = nil; result.pendingMode = nil; try store.save(result); refresh(); selection = result.id
         stableText = finalText; draftText = ""; status = "Готово"
-        if insert {
-            if await insertion.paste(finalText) { overlay.hide() }
-            else { status = "Текст готов — выберите поле и вставьте"; overlay.show(model: self) }
-        } else { overlay.hide() }
+        if insert && !finalText.isEmpty {
+            if await insertion.paste(finalText) {
+                status = needsReview ? "Текст вставлен · минимальная очистка" : "Текст вставлен"
+                if needsReview { overlay.showReceipt(model: self) }
+            } else {
+                status = "Текст готов · поле для вставки изменилось"
+                overlay.showReceipt(model: self)
+            }
+        } else { status = raw.isEmpty ? "Речь не обнаружена" : "Готово" }
+
+    }
+    private func persistInterruption(_ id: UUID, error: Error) {
+        guard var saved = (try? store.sessions())?.first(where: { $0.id == id }) else { return }
+        saved.state = "interrupted"
+        saved.error = error is CancellationError ? "Обработка приостановлена. Можно продолжить." : error.localizedDescription
+        try? store.save(saved)
     }
     func retry(_ session: RecordingSession) {
+        if let mode = session.pendingMode { transform(session, mode: mode); return }
         guard !processing, active == nil else { return }; processing = true; currentJobID = session.id
         processingTask = Task {
             do { try await process(session) }
-            catch { if !Task.isCancelled { self.error = error.localizedDescription } }
-            processing = false; currentJobID = nil; refresh(); await scheduleUnload()
+            catch { persistInterruption(session.id, error: error); if !Task.isCancelled { self.error = error.localizedDescription } }
+            processing = false; currentJobID = nil; refresh(); await scheduleUnload(); resumeQueued()
         }
     }
     private func processMeetingDictation(since start: Double) {
@@ -343,7 +371,7 @@ final class AppModel: ObservableObject {
                     }
                 }
                 let raw = fragments.joined(separator: " ")
-                let value = installed.contains("editor") ? try await editor.edit(raw, mode: .clean, dictionary: dictionary).text : raw
+                let value = installed.contains("editor") ? try await editor.edit(raw, mode: defaultEditingMode, dictionary: dictionary, style: editingStyle).text : raw
                 finalText = value
                 if !(await insertion.paste(value)) { status = "Диктовка готова — скопируйте текст" }
                 else { status = "Созвон продолжается" }
@@ -355,11 +383,11 @@ final class AppModel: ObservableObject {
         var pending = session; pending.pendingMode = mode; pending.state = "processing"; try? store.save(pending)
         processingTask = Task {
             do {
-                let edit = try await editor.edit(session.referencedText, mode: mode, dictionary: dictionary)
+                let edit = try await editor.edit((mode == .clean || mode == .compose) ? session.rawText : session.referencedText, mode: mode, dictionary: dictionary, style: editingStyle)
                 try Task.checkCancellation()
-                var updated = session; updated.pendingMode = nil; updated.state = "ready"; updated.versions.append(.init(mode: mode, text: edit.text)); try store.save(updated)
-            } catch { if !Task.isCancelled { self.error = error.localizedDescription } }
-            processing = false; currentJobID = nil; refresh(); await scheduleUnload()
+                var updated = session; updated.pendingMode = nil; updated.state = "ready"; updated.versions.append(.init(mode: mode, text: edit.text)); updated.error = edit.guarded ? "Проверьте числа и отрицания: редактура сохранена отдельно от исходника." : nil; try store.save(updated)
+            } catch { persistInterruption(session.id, error: error); if !Task.isCancelled { self.error = error.localizedDescription } }
+            processing = false; currentJobID = nil; refresh(); await scheduleUnload(); resumeQueued()
         }
     }
     func importAudio() {
@@ -370,8 +398,8 @@ final class AppModel: ObservableObject {
         processingTask = Task {
             var session = RecordingSession(kind: .note); session.title = url.deletingPathExtension().lastPathComponent; currentJobID = session.id
             do { try store.save(session); let id = session.id; try await Task.detached { try AudioFiles.importFile(url, id: id) }.value; try await process(session) }
-            catch { session.state = "interrupted"; session.error = error.localizedDescription; try? store.save(session); self.error = error.localizedDescription }
-            processing = false; currentJobID = nil; refresh(); await scheduleUnload()
+            catch { persistInterruption(session.id, error: error); if !Task.isCancelled { self.error = error.localizedDescription } }
+            processing = false; currentJobID = nil; refresh(); await scheduleUnload(); resumeQueued()
         }
     }
     func loadApplications() { Task { do { applications = try await AudioCapture.applications(); if applicationPID == 0 { applicationPID = applications.first?.processID ?? 0 } } catch { self.error = "Разрешите запись экрана и системного аудио в настройках macOS. \(error.localizedDescription)" } } }
@@ -384,22 +412,35 @@ final class AppModel: ObservableObject {
         }
     }
     func cancelDownload(_ id: String) { downloads[id]?.cancel() }
+    private func cancelQuestion() {
+        questionTask?.cancel(); questionRequestID = UUID(); asking = false
+    }
     func ask(_ question: String, session: RecordingSession?) {
-        guard !asking, !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }; asking = true; answer = ""
-        Task {
+        guard !asking, !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let requestID = UUID(); questionRequestID = requestID
+        asking = true; answer = ""; answerExcerpts = []
+        questionTask = Task {
             do {
                 let candidates = try session.map { [$0] } ?? store.search(question).map(\.session)
-                answerSources = Array(candidates.filter { !$0.segments.isEmpty }.prefix(5))
+                let sources = Array(candidates.filter { !$0.segments.isEmpty }.prefix(5))
                 let words = question.lowercased().split(separator: " ").filter { $0.count > 2 }
-                let evidence = answerSources.enumerated().map { index, item in
+                var excerpts: [EvidenceExcerpt] = []
+                let evidence = sources.enumerated().map { index, item in
                     let ranked = item.segments.sorted { a,b in
                         words.filter { a.text.lowercased().contains($0) }.count > words.filter { b.text.lowercased().contains($0) }.count
                     }.prefix(8).sorted { $0.start < $1.start }
+                    excerpts += ranked.map { EvidenceExcerpt(recordingID: item.id, sourceIndex: index + 1, segment: $0) }
                     return "[\(index+1)] \(item.title)\n" + ranked.map { "[\($0.timestamp)] \($0.text)" }.joined(separator: "\n")
                 }.joined(separator: "\n\n")
-                answer = try await editor.answer(question, evidence: String(evidence.prefix(18000)))
-            } catch { self.error = error.localizedDescription }
-            asking = false; await scheduleUnload()
+                let response = try await editor.answer(question, evidence: String(evidence.prefix(18000)))
+                guard !Task.isCancelled, questionRequestID == requestID else { return }
+                answer = response; answerSources = sources; answerExcerpts = excerpts
+            } catch {
+                guard !Task.isCancelled, questionRequestID == requestID else { return }
+                self.error = error.localizedDescription
+            }
+            if questionRequestID == requestID { asking = false }
+            await scheduleUnload()
         }
     }
     func save(_ session: RecordingSession) { do { try store.save(session); refresh() } catch { self.error = error.localizedDescription } }
@@ -408,12 +449,10 @@ final class AppModel: ObservableObject {
     func saveVoice(_ name: String, embedding: [Float]) { guard !name.isEmpty, !embedding.isEmpty else { return }; do { try store.save(VoiceProfile(name: name, embedding: embedding)); refresh() } catch { self.error = error.localizedDescription } }
     func deleteItem(_ id: UUID, voice: Bool) { do { try store.deleteItem(id, voice: voice); refresh() } catch { self.error = error.localizedDescription } }
     func play(_ session: RecordingSession, at seconds: Double, source: String) {
-        do {
-            guard let part = try AudioFiles.parts(session.id).first(where: { $0.source == source && $0.start <= seconds && $0.start + $0.duration > seconds }) else { throw LocalFlowError.message("Аудио этого фрагмента уже удалено или недоступно") }
-            player = try AVAudioPlayer(contentsOf: AppPaths.audio(session.id).appendingPathComponent(part.file)); player?.currentTime = max(0, seconds - part.start); player?.play()
-        } catch { self.error = error.localizedDescription }
+        do { try playback.play(session, at: seconds, source: source) }
+        catch { self.error = error.localizedDescription }
     }
-    func stopPlayback() { player?.stop() }
+    func stopPlayback() { playback.stop() }
     func export(_ session: RecordingSession, text selectedText: String? = nil) {
         let panel = NSSavePanel(); panel.nameFieldStringValue = session.title + ".md"; panel.allowedContentTypes = [.plainText, .init(filenameExtension: "md")!]
         guard panel.runModal() == .OK, let url = panel.url else { return }

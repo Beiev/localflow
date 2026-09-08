@@ -18,3 +18,7 @@ xcuserdata/
 *.flac
 
 build.noindex/
+
+*.pem
+*.p12
+*.keychain*
