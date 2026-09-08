@@ -2,6 +2,11 @@ import XCTest
 import LocalFlowCore
 
 final class CoreTests: XCTestCase {
+    func testCorrectionCannotBecomeDifferentNumericRelationship() {
+        let source = "Отправить нужно 15 файлов, точнее 12, остальные пока не готовы."
+        XCTAssertFalse(TextSafety.validateEdit(original: source, edited: "Нужно подготовить 15 файлов, однако 12 из них уже готовы, остальные — пока нет."))
+        XCTAssertTrue(TextSafety.validateEdit(original: source, edited: "Нужно отправить 15 файлов, вернее 12. Остальные пока не готовы."))
+    }
     func testRejectedEditStillProducesDeliverableTextWithoutChangingFacts() {
         let original = "Эээ, бюджет 250000 рублей, данные не отправляем. " + String(repeating: "Это длинная диктовка. ", count: 80)
         let proposal = "Бюджет 250 рублей. Данные отправляем."

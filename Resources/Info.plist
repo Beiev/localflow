@@ -7,7 +7,7 @@
 <key>CFBundleName</key><string>LocalFlow</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.3</string>
-<key>CFBundleVersion</key><string>5</string>
+<key>CFBundleVersion</key><string>6</string>
 <key>LSMinimumSystemVersion</key><string>15.0</string>
 <key>NSMicrophoneUsageDescription</key><string>LocalFlow записывает вашу речь для локальной расшифровки.</string>
 <key>NSScreenCaptureUsageDescription</key><string>LocalFlow записывает системный звук для расшифровки созвона.</string>

@@ -38,7 +38,6 @@ struct MainView: View {
     @ObservedObject var model: AppModel
     @State private var section = "archive"
     @State private var search = ""
-    @State private var question = ""
     var body: some View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 22) {
@@ -171,8 +170,12 @@ struct SessionView: View {
                     }
                     if current.segments.isEmpty { Text("Расшифровка появится после обработки.").foregroundStyle(.secondary) }
                 } else { Text(shownText).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).lineSpacing(5) }
-                HStack { Button("Редактировать текст") { editText = shownText; editing = true }; Button("Остановить воспроизведение") { model.stopPlayback() }.disabled(!model.isPlaying) }
-                DisclosureGroup("Запомнить исправление") { HStack { TextField("Как распознано", text: $heard); TextField("Как правильно", text: $preferred); Button("Запомнить") { model.addWord(heard, preferred); heard = ""; preferred = "" } }.textFieldStyle(.roundedBorder).padding(.top, 8) }
+                HStack {
+                    Button("Скопировать текст") { model.copyText(shownText) }.disabled(shownText.isEmpty)
+                    Button("Редактировать текст") { editText = shownText; editing = true }
+                    if model.isPlaying { Button("Остановить воспроизведение") { model.stopPlayback() } }
+                }
+                DisclosureGroup("Запомнить исправление") { HStack { TextField("Как распознано", text: $heard).labelsHidden().textFieldStyle(.roundedBorder); TextField("Как правильно", text: $preferred).labelsHidden().textFieldStyle(.roundedBorder); Button("Запомнить") { model.addWord(heard, preferred); heard = ""; preferred = "" } }.textFieldStyle(.roundedBorder).padding(.top, 8) }
                 if current.kind == .meeting {
                     DisclosureGroup("Уточнить разделение голосов") {
                         Picker("Собеседников", selection: Binding(get: { current.expectedRemoteSpeakers ?? 0 }, set: { count in var value = current; value.expectedRemoteSpeakers = count == 0 ? nil : count; model.save(value) })) {
@@ -252,7 +255,7 @@ struct MemoryView: View {
         Form {
             Section("Личный словарь") {
                 Text("Добавляйте имена, термины и английские слова. Исправления применяются перед редактированием текста.").foregroundStyle(.secondary)
-                HStack { TextField("Как распознано", text: $heard); TextField("Как правильно", text: $preferred); Button("Добавить") { model.addWord(heard, preferred); heard = ""; preferred = "" } }
+                HStack { TextField("Как распознано", text: $heard).labelsHidden().textFieldStyle(.roundedBorder); TextField("Как правильно", text: $preferred).labelsHidden().textFieldStyle(.roundedBorder); Button("Добавить") { model.addWord(heard, preferred); heard = ""; preferred = "" } }
                 ForEach(model.dictionary) { item in HStack { Text(item.heard); Image(systemName: "arrow.right"); Text(item.preferred).fontWeight(.medium); Spacer(); Button(role: .destructive) { model.deleteItem(item.id, voice: false) } label: { Image(systemName: "trash") } } }
             }
             Section("Знакомые голоса") {

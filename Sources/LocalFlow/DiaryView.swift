@@ -30,6 +30,7 @@ struct DiaryView: View {
                         Menu {
                             Button("Исходник и версии") { showDetails = true }
                             if !content.isEmpty {
+                                Button("Скопировать текст") { model.copyText(content) }
                                 Button("Редактировать текст") { text = content; editing = true }
                                 Button("Экспорт") { model.export(current, text: content) }
                                 Menu("Обработать заново") {

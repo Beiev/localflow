@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import ScreenCaptureKit
 import AVFoundation
 import LocalFlowCore
 
@@ -15,14 +14,10 @@ final class AppModel: ObservableObject {
     @Published var draftText = ""
     @Published var liveSegments: [TranscriptSegment] = []
     @Published var liveTails: [String: String] = [:]
-    @Published var liveRevision = 0
     @Published var elapsed: Double = 0
     @Published var paused = false
     @Published var processing = false
     @Published var finalText = ""
-    @Published var applications: [SCRunningApplication] = []
-    @Published var applicationPID: pid_t = 0
-    @Published var expectedRemoteSpeakers = 0
     @Published var dictionary: [DictionaryEntry] = []
     @Published var voices: [VoiceProfile] = []
     @Published var downloadProgress: [String: Double] = [:]
@@ -58,7 +53,7 @@ final class AppModel: ObservableObject {
     private var hypotheses: [String: LiveHypothesis] = [:]
     private var committed: [TranscriptSegment] = []
     private var nextWindowStart: [String: Double] = [:]
-    private var dictationDuringMeeting: (start: Double, target: UUID)?
+    private var dictationDuringMeeting: Double?
     let playback = AudioPlayback()
     @Published var isPlaying = false
     private var pressureSource: DispatchSourceMemoryPressure?
@@ -146,19 +141,18 @@ final class AppModel: ObservableObject {
             return
         }
         if let active, active.kind == .meeting, !processing {
-            if let range = dictationDuringMeeting { dictationDuringMeeting = nil; overlay.hide(); processMeetingDictation(since: range.start) }
-            else { insertion.capture(); dictationDuringMeeting = (elapsed, active.id); overlay.show(model: self); status = "Диктовка во время созвона" }
+            if let range = dictationDuringMeeting { dictationDuringMeeting = nil; overlay.hide(); processMeetingDictation(since: range) }
+            else { insertion.capture(); dictationDuringMeeting = elapsed; overlay.show(model: self); status = "Диктовка во время созвона" }
         } else if isRecording { stop() }
         else if !processing { insertion.capture(); start(.dictation) }
     }
     func toggleMeeting() {
         if active?.kind == .meeting && isRecording { stop() }
-        else if active == nil && !processing && !isStarting { applicationPID = 0; start(.meeting) }
+        else if active == nil && !processing && !isStarting { start(.meeting) }
     }
     func start(_ kind: SessionKind, existing: RecordingSession? = nil) {
         guard active == nil, !isStarting, !processing else { return }
         guard installed.contains(compact ? "asr4" : "asr8") else { error = "Откройте «Модели» и загрузите распознаватель. Для связного текста загрузите также редактор."; showMain(); return }
-        let app = kind == .meeting ? applications.first { $0.processID == applicationPID } : nil
 
         if let existing, existing.duration > 0, !FileManager.default.fileExists(atPath: AppPaths.audio(existing.id).appendingPathComponent("parts.json").path) {
             error = "Аудио этой заметки уже удалено. Создайте новую заметку; сохранённый текст останется в архиве."; return
@@ -175,7 +169,7 @@ final class AppModel: ObservableObject {
                 active = session; selection = session.id; buffers = [:]; hypotheses = [:]; committed = session.segments; nextWindowStart = [:]
                 stableText = ""; draftText = ""; liveSegments = []; liveTails = [:]; finalText = ""; elapsed = session.duration; paused = false; startDate = Date().addingTimeInterval(-session.duration)
                 status = "Запускаю микрофон…"; if kind != .note { overlay.show(model: self) }
-                try await capture.start(id: session.id, application: app, captureSystemAudio: kind == .meeting, append: existing != nil && FileManager.default.fileExists(atPath: AppPaths.audio(session.id).appendingPathComponent("parts.json").path))
+                try await capture.start(id: session.id, captureSystemAudio: kind == .meeting, append: existing != nil && FileManager.default.fileExists(atPath: AppPaths.audio(session.id).appendingPathComponent("parts.json").path))
                 shortcut.recording = true; status = "Слушаю…"; if kind != .note { overlay.show(model: self) }
                 startLoops(); refresh()
             } catch { active = nil; overlay.hide(); self.error = error.localizedDescription; showMain(); var failed = session; failed.state = "interrupted"; failed.error = error.localizedDescription; try? store.save(failed); refresh() }
@@ -238,7 +232,6 @@ final class AppModel: ObservableObject {
                 }
                 liveSegments = committed
                 liveTails = hypotheses.mapValues { [$0.stable, $0.draft].filter { !$0.isEmpty }.joined(separator: " ") }
-                liveRevision += 1
                 status = paused ? "Пауза" : "Слушаю…"
             } catch { guard !Task.isCancelled else { return }; status = "Аудио сохраняется; расшифровку можно повторить"; self.error = error.localizedDescription; return }
         }
@@ -402,7 +395,6 @@ final class AppModel: ObservableObject {
             processing = false; currentJobID = nil; refresh(); await scheduleUnload(); resumeQueued()
         }
     }
-    func loadApplications() { Task { do { applications = try await AudioCapture.applications(); if applicationPID == 0 { applicationPID = applications.first?.processID ?? 0 } } catch { self.error = "Разрешите запись экрана и системного аудио в настройках macOS. \(error.localizedDescription)" } } }
     func install(_ package: ModelPackage) {
         guard downloads[package.id] == nil else { return }; downloadProgress[package.id] = 0
         downloads[package.id] = Task {
@@ -459,7 +451,8 @@ final class AppModel: ObservableObject {
         let text = "# \(session.title)\n\n" + (selectedText ?? session.versions.last?.text ?? session.referencedText)
         do { try text.write(to: url, atomically: true, encoding: .utf8) } catch { self.error = error.localizedDescription }
     }
-    func copyResult() { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(finalText, forType: .string) }
+    func copyText(_ text: String) { guard !text.isEmpty else { return }; NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType: .string) }
+    func copyResult() { copyText(finalText) }
     func pasteResult() { Task { if await insertion.paste(finalText, useCurrentTarget: true) { overlay.hide() } else { status = "Выберите текстовое поле другого приложения" } } }
     func scheduleUnload() async {
         await speech.scheduleUnload(after: Double(UserDefaults.standard.integer(forKey: "asrIdleSeconds").nonzero(default: 120)))

@@ -55,11 +55,7 @@ public final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @un
             return (name as String).localizedCaseInsensitiveContains("MV7")
         }
     }
-    public static func applications() async throws -> [SCRunningApplication] {
-        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
-        return content.applications.filter { $0.processID != ProcessInfo.processInfo.processIdentifier && !$0.applicationName.isEmpty }.sorted { $0.applicationName < $1.applicationName }
-    }
-    public func start(id: UUID, application: SCRunningApplication? = nil, captureSystemAudio: Bool = false, append: Bool = false) async throws {
+    public func start(id: UUID, captureSystemAudio: Bool = false, append: Bool = false) async throws {
         guard await AVCaptureDevice.requestAccess(for: .audio) else { throw LocalFlowError.message("Разрешите доступ к микрофону в Системных настройках → Конфиденциальность → Микрофон") }
         let previous = append ? try AudioFiles.parts(id) : []
         let offset = previous.map { $0.start + $0.duration }.max() ?? 0
@@ -93,12 +89,10 @@ public final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @un
                     self.onError?("Аудиоустройство изменилось или отключилось. Запись сохранена; выберите микрофон и начните новую запись.")
                 }
             }
-            if captureSystemAudio || application != nil {
+            if captureSystemAudio {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
                 guard let display = content.displays.first else { throw LocalFlowError.message("Нет экрана для захвата звука") }
-                let filter: SCContentFilter
-                if let application { filter = SCContentFilter(display: display, including: [application], exceptingWindows: []) }
-                else { filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: []) }
+                let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
                 let config = SCStreamConfiguration()
                 config.capturesAudio = true; config.excludesCurrentProcessAudio = true
                 config.sampleRate = 48000; config.channelCount = 2

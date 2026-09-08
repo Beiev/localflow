@@ -32,6 +32,13 @@ public enum TextSafety {
             }
         }
         guard numbers(original) == numbers(edited) else { return false }
+        // Keeping the same digits is insufficient when a speaker corrects a value:
+        // "15 files, more precisely 12" must not become "15 files, 12 are ready".
+        let correctedNumber = "(?<!\\p{L})(?:точнее|вернее|поправка|rather|actually)\\s*[:,—-]?\\s*[+-]?\\d+(?:[ \u{00a0}\u{202f}]\\d{3})*(?:[.,]\\d+)?"
+        let originalCorrections = matches(correctedNumber, original).flatMap { numbers($0) }
+        let editedCorrections = matches(correctedNumber, edited).flatMap { numbers($0) }
+        guard originalCorrections == editedCorrections else { return false }
+
         let negatives = "(?<!\\p{L})(?:не|нет|нельзя|никогда|not|never)(?!\\p{L})"
         guard matches(negatives, original).count == matches(negatives, edited).count else { return false }
         if original.count > 100 && edited.count < original.count / 2 { return false }

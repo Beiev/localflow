@@ -47,7 +47,6 @@ final class GlobalShortcut {
         CGEvent.tapEnable(tap: tap, enable: true)
         return CGEvent.tapIsEnabled(tap: tap)
     }
-    func requestPermission() { let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary; _ = AXIsProcessTrustedWithOptions(options) }
 }
 @MainActor
 final class TextInsertion {
