@@ -168,9 +168,113 @@ final class CoreTests: XCTestCase {
     }
     func testKnownVoiceMatched() { XCTAssertEqual(TextSafety.matchVoice([1,0], profiles: [VoiceProfile(name: "A", embedding: [1,0])]), "A") }
     func testZeroEmbedding() { XCTAssertEqual(TextSafety.cosine([0,0],[0,0]), 0) }
+    func testIdentitiesOfOneVoiceAreMerged() {
+        // Shaped after the 9 September recording: two halves of one voice, one distinct voice.
+        let database: [String: [Float]] = ["S1": [1, 0, 0], "S2": [0, 1, 0], "S3": [0.9, 0.1, 0]]
+        let map = TextSafety.mergeIdentities(database)
+        XCTAssertEqual(map["S3"], "S1")
+        XCTAssertEqual(map["S1"], "S1")
+        XCTAssertEqual(map["S2"], "S2")
+    }
+    func testDistinctVoicesAreNotMerged() {
+        XCTAssertEqual(TextSafety.mergeIdentities(["S1": [1, 0], "S2": [0, 1]]), ["S1": "S1", "S2": "S2"])
+    }
+    func testMergingIsTransitive() {
+        let database: [String: [Float]] = ["A": [1, 0], "B": [0.95, 0.05], "C": [0.9, 0.1]]
+        XCTAssertEqual(Set(TextSafety.mergeIdentities(database).values), ["A"])
+    }
+    func testUncoveredUtteranceTakesTheNearestVoice() {
+        let spans = [SpeakerSpan(start: 0, end: 10, speaker: "S1"), SpeakerSpan(start: 14, end: 20, speaker: "S2")]
+        XCTAssertEqual(TextSafety.speaker(from: 2, to: 5, in: spans), "S1")
+        XCTAssertEqual(TextSafety.speaker(from: 11, to: 12, in: spans), "S1")
+        XCTAssertEqual(TextSafety.speaker(from: 13, to: 13.5, in: spans), "S2")
+        XCTAssertNil(TextSafety.speaker(from: 40, to: 41, in: spans))
+    }
+    func testOverlapDecidesBeforeProximity() {
+        let spans = [SpeakerSpan(start: 0, end: 10, speaker: "S1"), SpeakerSpan(start: 9, end: 20, speaker: "S2")]
+        XCTAssertEqual(TextSafety.speaker(from: 9, to: 13, in: spans), "S2")
+    }
     func testGroupingKeepsSpeakerChanges() {
         let words = [TranscriptSegment(start: 0, end: 0.5, text: "Привет", speaker: "A"), TranscriptSegment(start: 0.5, end: 1, text: "всем.", speaker: "A"), TranscriptSegment(start: 1, end: 2, text: "Здравствуйте", speaker: "B")]
         let result = TranscriptAssembly.group(words); XCTAssertEqual(result.count,2); XCTAssertEqual(result[0].text,"Привет всем."); XCTAssertEqual(result[1].speaker,"B")
+    }
+    func testSentencesOfOneSpeakerBecomeOneTurn() {
+        let words = [TranscriptSegment(start: 0, end: 1, text: "Первое предложение.", speaker: "A"),
+                     TranscriptSegment(start: 1.1, end: 2, text: "Второе предложение.", speaker: "A"),
+                     TranscriptSegment(start: 2.05, end: 3, text: "Третье.", speaker: "A")]
+        let result = TranscriptAssembly.group(words)
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result[0].text, "Первое предложение. Второе предложение. Третье.")
+        XCTAssertEqual(result[0].end, 3)
+    }
+    func testTurnEndsAfterASilence() {
+        let gap = TranscriptAssembly.turnGapSeconds
+        let words = [TranscriptSegment(start: 0, end: 1, text: "До паузы.", speaker: "A"),
+                     TranscriptSegment(start: 1 + gap, end: 2 + gap, text: "После паузы.", speaker: "A")]
+        XCTAssertEqual(TranscriptAssembly.group(words).count, 2)
+    }
+    func testInterleavedTracksDoNotBreakTurnsApart() {
+        let words = [TranscriptSegment(start: 0, end: 1, text: "Я говорю.", source: "microphone", speaker: "self"),
+                     TranscriptSegment(start: 1.1, end: 1.4, text: "Ага.", source: "system", speaker: "S1"),
+                     TranscriptSegment(start: 1.5, end: 2.5, text: "И продолжаю.", source: "microphone", speaker: "self")]
+        let result = TranscriptAssembly.group(words)
+        XCTAssertEqual(result.count, 2)
+        XCTAssertEqual(result.first?.text, "Я говорю. И продолжаю.")
+        XCTAssertEqual(result.first?.source, "microphone")
+        XCTAssertEqual(result.last?.source, "system")
+    }
+    func testLongMonologueStaysWithinTurnBounds() {
+        let sentence = String(repeating: "слово ", count: 20) + "."
+        var words: [TranscriptSegment] = []
+        var start = 0.0
+        while start < 300 { words.append(TranscriptSegment(start: start, end: start + 1.5, text: sentence, speaker: "A")); start += 1.6 }
+        let result = TranscriptAssembly.group(words)
+        XCTAssertGreaterThan(result.count, 1)
+        for turn in result {
+            XCTAssertLessThanOrEqual(turn.text.count, TranscriptAssembly.turnCharacterLimit)
+            XCTAssertLessThanOrEqual(turn.end - turn.start, TranscriptAssembly.turnDurationSeconds)
+        }
+        XCTAssertTrue(zip(result, result.dropFirst()).allSatisfy { $0.start <= $1.start })
+    }
+    func testGroupingIsIdempotentAndMatchesIncrementalBatches() {
+        var words: [TranscriptSegment] = []
+        for index in 0..<40 {
+            let start = Double(index) * 1.3
+            let system: Bool = index % 5 == 0
+            let text: String = "слово\(index)" + (index % 3 == 0 ? "." : "")
+            words.append(TranscriptSegment(start: start, end: start + 1.0, text: text,
+                                           source: system ? "system" : "microphone",
+                                           speaker: system ? "S1" : "self"))
+        }
+        let once: [TranscriptSegment] = TranscriptAssembly.group(words)
+        let twice: [TranscriptSegment] = TranscriptAssembly.group(once)
+        XCTAssertEqual(once.map { $0.text }, twice.map { $0.text })
+        // The live path regroups committed turns plus each new batch; that must land on the same
+        // turns as the single offline pass, otherwise the archive and the live window disagree.
+        var incremental: [TranscriptSegment] = []
+        var index = 0
+        while index < words.count {
+            let batch = Array(words[index..<min(index + 7, words.count)])
+            incremental = TranscriptAssembly.group(incremental + batch)
+            index += 7
+        }
+        XCTAssertEqual(incremental.map { $0.text }, once.map { $0.text })
+    }
+    func testTurnAssemblyKeepsEveryWord() {
+        var words: [TranscriptSegment] = []
+        for index in 0..<40 {
+            let start = Double(index) * 1.1
+            let system: Bool = index % 4 == 0
+            let text: String = "слово\(index)" + (index % 3 == 0 ? "." : "")
+            words.append(TranscriptSegment(start: start, end: start + 0.9, text: text,
+                                           source: system ? "system" : "microphone",
+                                           speaker: system ? "S1" : "self"))
+        }
+        let turns: [TranscriptSegment] = TranscriptAssembly.group(words)
+        let before: [String] = words.map { $0.text }.joined(separator: " ").split(separator: " ").map(String.init)
+        let after: [String] = turns.map { $0.text }.joined(separator: " ").split(separator: " ").map(String.init)
+        XCTAssertEqual(before.count, after.count)
+        XCTAssertEqual(Set(before), Set(after))
     }
     func testArchiveTransactionsAndSearchDeletion() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

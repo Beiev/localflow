@@ -119,16 +119,37 @@ public enum TranscriptAssembly {
         }
     }
 
+    /// A turn ends when the same speaker pauses for longer than this.
+    public static let turnGapSeconds: Double = 2
+    /// A turn stops growing past these bounds so its single timestamp stays meaningful.
+    public static let turnCharacterLimit = 900
+    public static let turnDurationSeconds: Double = 60
+
+    private struct Stream: Hashable { let source: String; let speaker: String? }
+
+    /// Consecutive words of one speaker become one turn. The recognizer emits punctuation, so a
+    /// sentence boundary is not a turn boundary: splitting on it gave one archive entry per
+    /// sentence (485 of them, median six words, on a real 29-minute call). Streams are tracked
+    /// separately, so words interleaved from the other track cannot break a turn apart.
     public static func group(_ words: [TranscriptSegment]) -> [TranscriptSegment] {
-        var grouped: [TranscriptSegment] = []
+        var turns: [TranscriptSegment] = []
+        var open: [Stream: Int] = [:]
         for word in words.sorted(by: { $0.start < $1.start }) {
-            if var last = grouped.last, last.source == word.source, last.speaker == word.speaker,
-               word.start - last.end < 1, last.text.count + word.text.count < 220,
-               ![".", "!", "?"].contains(last.text.last.map(String.init) ?? "") {
-                last.text += " " + word.text; last.end = max(last.end, word.end); grouped[grouped.count-1] = last
-            } else { grouped.append(word) }
+            let stream = Stream(source: word.source, speaker: word.speaker)
+            if let index = open[stream], extends(turns[index], with: word) {
+                turns[index].text += " " + word.text
+                turns[index].end = max(turns[index].end, word.end)
+            } else {
+                turns.append(word); open[stream] = turns.count - 1
+            }
         }
-        return grouped
+        // Words arrive sorted by start, so turns are appended in ascending start order too.
+        return turns
+    }
+    private static func extends(_ turn: TranscriptSegment, with word: TranscriptSegment) -> Bool {
+        word.start - turn.end < turnGapSeconds
+            && turn.text.count + word.text.count + 1 <= turnCharacterLimit
+            && word.end - turn.start <= turnDurationSeconds
     }
 }
 

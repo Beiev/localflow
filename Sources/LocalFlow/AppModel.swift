@@ -236,7 +236,10 @@ final class AppModel: ObservableObject {
                     // Timestamp ownership prevents the overlap from duplicating words.
                     let end = start + Double(samples.count)/16000 - 1
                     let finalized = words.filter { ($0.start + $0.end)/2 < end }
-                    committed.append(contentsOf: TranscriptAssembly.group(finalized))
+                    // Regroup the whole list, not just the new words: a turn that continues past a
+                    // window boundary has to stay one turn. Grouping is idempotent, so replaying
+                    // the committed turns through it cannot split or duplicate anything.
+                    committed = TranscriptAssembly.group(committed + finalized)
                     nextWindowStart[source] = end
                     var tail = LiveHypothesis()
                     tail.update(words.filter { ($0.start + $0.end)/2 >= end }.map(\.text).joined(separator: " "))
