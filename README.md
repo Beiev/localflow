@@ -10,7 +10,7 @@ LocalFlow is an open, privacy-first alternative to Wispr Flow built for Apple Si
 - **Shortcuts you actually like.** Both global shortcuts (dictation and meeting capture) are re-recordable in Settings with live validation: conflicts with each other and system-critical combinations (⌘C/⌘V/⌘X/⌘Q/⌘W/⌘Space/⌘Tab) are rejected, function keys work without modifiers, and ⌘-shortcuts trigger on the left ⌘ only — the right ⌘ keeps reaching applications, so ⌘B still means Bold.
 - **Two editing strengths.** *Tidy* removes speech noise while preserving facts, numbers, negations and your tone. *Flowing text* reorganizes a stream of thoughts into coherent paragraphs without inventing anything. A free-form *your style* field tunes both.
 - **Voice notes as a quiet diary page.** Create a note, write a title and a line of context, then dictate into it whenever you're ready. Notes can be extended by voice later.
-- **One-press meeting capture (⇧⌘M).** Records system audio and your microphone as separate tracks, transcribes both, splits speakers post-hoc, and produces a summary with decisions, open questions and clickable timestamps back into the audio.
+- **One-press meeting capture (⇧⌘M).** Records system audio and your microphone as separate tracks, transcribes both into speaker turns, splits speakers post-hoc, and condenses the transcript in two stages — notes per section, then one merged summary with decisions, open questions and `[mm:ss]` timestamps that play the matching audio. Measured on a real 29-minute two-person call: 21 892 characters of speech to a 6 095-character summary carrying 44 verified timestamps ([docs/validation.md](docs/validation.md)). Two honest limits: the system track captures *every* app's audio, so a video played during a call becomes a phantom participant, and diarization can still split one voice into two identities.
 - **A memory that is actually yours.** A personal dictionary (heard → preferred spelling) is applied before every edit; familiar voices can be saved and recognized across meetings. Ask the archive a question and every claim comes with a citation and a playable timestamp.
 - **Engineered for low load.** Models load on demand and unload automatically after idle (ASR after 2 min, editor after 1 min by default). A dictated sentence edits in ~1–2 s on an M3 Pro; nothing runs in the background while you're silent.
 
@@ -37,7 +37,7 @@ Requirements: Apple Silicon Mac, Xcode 26+ with the Metal toolchain, [XcodeGen](
 brew install xcodegen
 xcodebuild -downloadComponent MetalToolchain
 Scripts/build.sh     # xcodegen + xcodebuild Release + local signing
-Scripts/test.sh      # 33 unit/interface tests
+Scripts/test.sh      # 55 unit/interface tests
 Scripts/install.sh   # installs to ~/Applications/LocalFlow.app
 ```
 
