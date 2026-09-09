@@ -180,9 +180,9 @@ final class AppModel: ObservableObject {
                 active = session; selection = session.id; buffers = [:]; hypotheses = [:]; committed = session.segments; nextWindowStart = [:]
                 stableText = ""; draftText = ""; liveSegments = []; liveTails = [:]; finalText = ""; elapsed = session.duration; paused = false; startDate = Date().addingTimeInterval(-session.duration)
                 waveform = []; audioLevel = 0
-                status = "Запускаю микрофон…"; if kind != .note { overlay.show(model: self) }
+                status = "Запускаю микрофон…"; if kind == .dictation { overlay.show(model: self) }
                 try await capture.start(id: session.id, captureSystemAudio: kind == .meeting, append: existing != nil && FileManager.default.fileExists(atPath: AppPaths.audio(session.id).appendingPathComponent("parts.json").path))
-                shortcut.recording = true; status = "Слушаю…"; if kind != .note { overlay.show(model: self) }
+                shortcut.recording = true; status = "Слушаю…"; if kind == .dictation { overlay.show(model: self) }
                 startLoops(); refresh()
             } catch { active = nil; overlay.hide(); self.error = error.localizedDescription; showMain(); var failed = session; failed.state = "interrupted"; failed.error = error.localizedDescription; try? store.save(failed); refresh() }
             isStarting = false
@@ -282,7 +282,9 @@ final class AppModel: ObservableObject {
                 saved = (try? store.sessions())?.first(where: { $0.id == saved.id }) ?? saved
                 saved.state = "interrupted"; saved.error = Task.isCancelled ? "Обработка приостановлена" : error.localizedDescription
                 try? store.save(saved); if !Task.isCancelled { self.error = error.localizedDescription }; status = "Аудио сохранено · откройте архив для восстановления"
-                if !Task.isCancelled { overlay.showReceipt(model: self) }
+                // The receipt panel is part of the dictation overlay; a meeting reports through
+                // the menu bar item, the status line and the archive entry instead.
+                if !Task.isCancelled, session.kind == .dictation { overlay.showReceipt(model: self) }
             }
             if session.kind != .dictation { overlay.hide() }
             active = nil; processing = false; shortcut.recording = false; currentJobID = nil; refresh(); await scheduleUnload(); resumeQueued()
@@ -336,9 +338,9 @@ final class AppModel: ObservableObject {
         finalText = TextSafety.minimalCleanup(raw, dictionary: dictionary)
         var needsReview = false
         if !raw.isEmpty && installed.contains(ModelCatalog.editorPackageID()) {
-            status = "Редактирую…"
+            let mode: ProcessingMode = result.kind == .meeting ? .summary : (result.editingMode ?? defaultEditingMode)
+            status = mode.progressTitle
             do {
-                let mode: ProcessingMode = result.kind == .meeting ? .summary : (result.editingMode ?? defaultEditingMode)
                 let edit = try await editor.edit(raw, mode: mode, dictionary: dictionary, style: result.editingStyle ?? editingStyle)
                 result.versions.append(TextVersion(mode: mode, text: edit.text))
                 finalText = TextSafety.deliveryText(original: raw, edited: edit.text, requiresReview: edit.guarded, dictionary: dictionary)
@@ -405,7 +407,7 @@ final class AppModel: ObservableObject {
     }
     func transform(_ session: RecordingSession, mode: ProcessingMode) {
         guard !processing, active == nil else { return }; processing = true; currentJobID = session.id
-        var pending = session; pending.pendingMode = mode; pending.state = "processing"; try? store.save(pending)
+        var pending = session; pending.pendingMode = mode; pending.state = "processing"; try? store.save(pending); status = mode.progressTitle
         processingTask = Task {
             do {
                 let edit = try await editor.edit((mode == .clean || mode == .compose) ? session.rawText : session.referencedText, mode: mode, dictionary: dictionary, style: editingStyle)
