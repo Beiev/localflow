@@ -10,31 +10,21 @@
 		0C2CA589A7DAA62CFA5C1EAD /* Bench.swift in Sources */ = {isa = PBXBuildFile; fileRef = 766B33FEF832846BFA4FFAD7 /* Bench.swift */; };
 		194F8EB804FD2B579B658F8D /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE5540CAF5717E62EF3F28E8 /* AppModel.swift */; };
 		1C72ABBAF3AD69832A6060C9 /* LocalFlowCore in Frameworks */ = {isa = PBXBuildFile; productRef = 90EBA0D15AC91B52856C9B49 /* LocalFlowCore */; };
-		262693F9AE2B9A57D44F574F /* AudioPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D43FA4FBEBBA5D5E21A1069 /* AudioPlayback.swift */; };
 		2F33F1FBB0F13A4050D04502 /* LiveTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73284D85DE9F90AF57695193 /* LiveTranscriptView.swift */; };
 		3BED8ACF93DF1887465842F5 /* AudioPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D43FA4FBEBBA5D5E21A1069 /* AudioPlayback.swift */; };
-		4AD3DBBC56026FDA2E36FA3D /* LiveTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73284D85DE9F90AF57695193 /* LiveTranscriptView.swift */; };
 		671CD4FC56578DF273ECEEC0 /* LocalFlowCore in Frameworks */ = {isa = PBXBuildFile; productRef = ACC864DFBE89F5B1B71D0EA2 /* LocalFlowCore */; };
-		6E42CA8EC928E1B699D2F141 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50E9F28B6C71F136E19F6364 /* Theme.swift */; };
-		7D2F134074EEA47B8CD99DBC /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E626B83FD5DC2AEB144BB0 /* Views.swift */; };
-		884251079CCE7AA277B4AC99 /* Shots.swift in Sources */ = {isa = PBXBuildFile; fileRef = F850BC3EB038B33C61B5F7FD /* Shots.swift */; };
 		92379FF4AC26F139B686A2D0 /* LocalFlowApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4AD72D510C6BC8691781F42 /* LocalFlowApp.swift */; };
 		95BD29BA4B1882EB72FDBFDC /* LocalFlow.icns in Resources */ = {isa = PBXBuildFile; fileRef = 8CBD3E61D7175D8DCF36F830 /* LocalFlow.icns */; };
-		979C19C482FA2EA693D0D8F9 /* LocalFlowCore in Frameworks */ = {isa = PBXBuildFile; productRef = 48CFF03D4F01ECA5FDFC0B3B /* LocalFlowCore */; };
 		A1D4AC27EB1BFC1CB0E1D002 /* TranscriberTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB014DC10D16B7AF64C2A969 /* TranscriberTests.swift */; };
 		A9A230CEFFAEF1B3B4CD5053 /* SystemIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39FDC656F128B9400E0EC928 /* SystemIntegration.swift */; };
 		B09185F73404080301B856D3 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25DCB08E0CE2C10BC1E6A89A /* SettingsView.swift */; };
 		B53C31E341258C4D836A09A2 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50E9F28B6C71F136E19F6364 /* Theme.swift */; };
 		C4C5D6941630B9020C8B387E /* LocalFlowCore in Frameworks */ = {isa = PBXBuildFile; productRef = 6A2346E6ECEA9EE811926A9C /* LocalFlowCore */; };
 		C81FD7B984D761C959AB31FD /* LiveTranscriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33A52AFE244900698303D55F /* LiveTranscriptTests.swift */; };
-		C8F618122D573A1EFA7DB0AE /* DiaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6841E2DBBB034738DCFEA434 /* DiaryView.swift */; };
 		D6F09D6F166909093D129367 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E626B83FD5DC2AEB144BB0 /* Views.swift */; };
 		D987F1C5B880CABB817A4F74 /* DiaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6841E2DBBB034738DCFEA434 /* DiaryView.swift */; };
 		DF27CFCDCB49C2D80D2E6C16 /* LiveTranscriptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73284D85DE9F90AF57695193 /* LiveTranscriptView.swift */; };
 		E45955EB14AD0120B3D8B142 /* CoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB3E9541B269457C1F3F8855 /* CoreTests.swift */; };
-		EA214F84977431FF77ADB75D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25DCB08E0CE2C10BC1E6A89A /* SettingsView.swift */; };
-		F11A04A748AC1FC86F6DA4CB /* SystemIntegration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39FDC656F128B9400E0EC928 /* SystemIntegration.swift */; };
-		F70E66C61D1452D67B81FD37 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE5540CAF5717E62EF3F28E8 /* AppModel.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -52,13 +42,11 @@
 		766B33FEF832846BFA4FFAD7 /* Bench.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bench.swift; sourceTree = "<group>"; };
 		8040A37B08BE8E069A106059 /* LocalFlow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LocalFlow.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8CBD3E61D7175D8DCF36F830 /* LocalFlow.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = LocalFlow.icns; sourceTree = "<group>"; };
-		A60398A17B5617561E5A08C9 /* LocalFlowShots */ = {isa = PBXFileReference; includeInIndex = 0; path = LocalFlowShots; sourceTree = BUILT_PRODUCTS_DIR; };
 		BE5540CAF5717E62EF3F28E8 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		D3E626B83FD5DC2AEB144BB0 /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		D4AD72D510C6BC8691781F42 /* LocalFlowApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalFlowApp.swift; sourceTree = "<group>"; };
 		DB014DC10D16B7AF64C2A969 /* TranscriberTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriberTests.swift; sourceTree = "<group>"; };
 		DB3E9541B269457C1F3F8855 /* CoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTests.swift; sourceTree = "<group>"; };
-		F850BC3EB038B33C61B5F7FD /* Shots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shots.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -67,14 +55,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				671CD4FC56578DF273ECEEC0 /* LocalFlowCore in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		45BC825FF0880635067EA892 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				979C19C482FA2EA693D0D8F9 /* LocalFlowCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -104,7 +84,6 @@
 				DF5C754D02510C7DA43FB148 /* LocalFlowBench */,
 				97310CB5231ACBB12C655FE2 /* LocalFlowCoreTests */,
 				71E336B6AF260DEE2AD54918 /* LocalFlowInterfaceTests */,
-				EC1A00C8C506A93091E3A7E9 /* LocalFlowShots */,
 				F984A78D41A0AB3E3D738E96 /* Packages */,
 				3DEAF320E10E073E5FBC1D23 /* Resources */,
 				DEB5BD1D19CC1FB437322297 /* Products */,
@@ -162,7 +141,6 @@
 				4E71784E66C848355653965F /* LocalFlowBench */,
 				3A6F373F490E374717B1F6C6 /* LocalFlowCoreTests.xctest */,
 				73BBEBD5F3CD77FFEAB4FFA2 /* LocalFlowInterfaceTests.xctest */,
-				A60398A17B5617561E5A08C9 /* LocalFlowShots */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -174,15 +152,6 @@
 			);
 			name = LocalFlowBench;
 			path = Sources/LocalFlowBench;
-			sourceTree = "<group>";
-		};
-		EC1A00C8C506A93091E3A7E9 /* LocalFlowShots */ = {
-			isa = PBXGroup;
-			children = (
-				F850BC3EB038B33C61B5F7FD /* Shots.swift */,
-			);
-			name = LocalFlowShots;
-			path = Sources/LocalFlowShots;
 			sourceTree = "<group>";
 		};
 		F984A78D41A0AB3E3D738E96 /* Packages */ = {
@@ -231,25 +200,6 @@
 			productName = LocalFlowCoreTests;
 			productReference = 3A6F373F490E374717B1F6C6 /* LocalFlowCoreTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		6BB49C51465204A99900B3D8 /* LocalFlowShots */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = BAF08974FA0BB7C44B5B3F8B /* Build configuration list for PBXNativeTarget "LocalFlowShots" */;
-			buildPhases = (
-				4CDAEBDE46A6092EF19E6568 /* Sources */,
-				45BC825FF0880635067EA892 /* Frameworks */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = LocalFlowShots;
-			packageProductDependencies = (
-				48CFF03D4F01ECA5FDFC0B3B /* LocalFlowCore */,
-			);
-			productName = LocalFlowShots;
-			productReference = A60398A17B5617561E5A08C9 /* LocalFlowShots */;
-			productType = "com.apple.product-type.tool";
 		};
 		85D48F438FAAAA3413136EE2 /* LocalFlowBench */ = {
 			isa = PBXNativeTarget;
@@ -329,7 +279,6 @@
 			targets = (
 				F6E6C043EB0325F6A9544DE2 /* LocalFlow */,
 				85D48F438FAAAA3413136EE2 /* LocalFlowBench */,
-				6BB49C51465204A99900B3D8 /* LocalFlowShots */,
 				5DCE169775731369C5EFE42B /* LocalFlowCoreTests */,
 				2F67868198C59AE5AA16E6EA /* LocalFlowInterfaceTests */,
 			);
@@ -354,22 +303,6 @@
 			files = (
 				C81FD7B984D761C959AB31FD /* LiveTranscriptTests.swift in Sources */,
 				DF27CFCDCB49C2D80D2E6C16 /* LiveTranscriptView.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		4CDAEBDE46A6092EF19E6568 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				F70E66C61D1452D67B81FD37 /* AppModel.swift in Sources */,
-				262693F9AE2B9A57D44F574F /* AudioPlayback.swift in Sources */,
-				C8F618122D573A1EFA7DB0AE /* DiaryView.swift in Sources */,
-				4AD3DBBC56026FDA2E36FA3D /* LiveTranscriptView.swift in Sources */,
-				EA214F84977431FF77ADB75D /* SettingsView.swift in Sources */,
-				884251079CCE7AA277B4AC99 /* Shots.swift in Sources */,
-				F11A04A748AC1FC86F6DA4CB /* SystemIntegration.swift in Sources */,
-				6E42CA8EC928E1B699D2F141 /* Theme.swift in Sources */,
-				7D2F134074EEA47B8CD99DBC /* Views.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -447,21 +380,6 @@
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
-		};
-		8F2C7A043CDD5BE8194F58F1 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_IDENTITY = "-";
-				COMBINE_HIDPI_IMAGES = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.beiev.LocalFlowShots;
-				SDKROOT = macosx;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Release;
 		};
 		8F4DE233C91F747AD7A7A9DE /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -644,21 +562,6 @@
 			};
 			name = Debug;
 		};
-		B8A0284D404E46D84C02285A /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_IDENTITY = "-";
-				COMBINE_HIDPI_IMAGES = YES;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.beiev.LocalFlowShots;
-				SDKROOT = macosx;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Debug;
-		};
 		C671716DA5DD9208EC727C7C /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -742,15 +645,6 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
-		BAF08974FA0BB7C44B5B3F8B /* Build configuration list for PBXNativeTarget "LocalFlowShots" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				B8A0284D404E46D84C02285A /* Debug */,
-				8F2C7A043CDD5BE8194F58F1 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
 		D3EE8DF6E2497C2D05E3EA49 /* Build configuration list for PBXProject "LocalFlow" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -779,10 +673,6 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		48CFF03D4F01ECA5FDFC0B3B /* LocalFlowCore */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = LocalFlowCore;
-		};
 		6A2346E6ECEA9EE811926A9C /* LocalFlowCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = LocalFlowCore;

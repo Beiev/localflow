@@ -55,7 +55,6 @@ Everything lives in `~/Library/Application Support/LocalFlow/`: a SQLite archive
 Sources/LocalFlowCore/   engine: audio capture, ASR/LLM/diarization, safety guards, SQLite store
 Sources/LocalFlow/       SwiftUI app: overlay panel, archive, diary, settings
 Sources/LocalFlowBench/  CLI benchmarking harness (ASR/editor/diarization pipelines)
-Sources/LocalFlowShots/  offscreen UI screenshot generator (local tooling)
 Scripts/                 build, test, install, signing, model pinning, editor bake-off
 docs/                    architecture, plan, validation log, benchmarks, product strategy
 ```

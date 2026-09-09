@@ -44,21 +44,6 @@ targets:
       base:
         SWIFT_VERSION: '5.0'
         CODE_SIGN_IDENTITY: '-'
-  LocalFlowShots:
-    type: tool
-    platform: macOS
-    sources:
-      - Sources/LocalFlowShots
-      - path: Sources/LocalFlow
-        excludes:
-          - LocalFlowApp.swift
-    dependencies:
-      - package: LocalFlowCore
-        product: LocalFlowCore
-    settings:
-      base:
-        SWIFT_VERSION: '5.0'
-        CODE_SIGN_IDENTITY: '-'
   LocalFlowCoreTests:
     type: bundle.unit-test
     platform: macOS
