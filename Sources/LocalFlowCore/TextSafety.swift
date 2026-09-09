@@ -88,6 +88,49 @@ public enum TextSafety {
         let norm = sqrt(a.reduce(0) { $0 + $1*$1 } * b.reduce(0) { $0 + $1*$1 })
         return norm > 0 ? dot/norm : 0
     }
+    /// Two diarizer identities at least this close are the same voice. On the one real recording
+    /// available (9 September 2026) the split halves of one voice sat at cos 0,84 while genuinely
+    /// different voices sat at 0,04 and 0,18 — a wide margin, but one recording, not a corpus.
+    public static let identityMergeThreshold: Float = 0.8
+    /// An utterance the diarizer left uncovered adopts the nearest identity within this window.
+    public static let speakerReachSeconds = 2.0
+
+    /// Collapses identities that are the same voice onto one representative, so a single speaker
+    /// split into several diarizer identities stops looking like several people. Returns a map
+    /// from every identity to its representative, which is the smallest id in its group.
+    public static func mergeIdentities(_ database: [String: [Float]], threshold: Float = identityMergeThreshold) -> [String: String] {
+        let ids = database.keys.sorted()
+        var parent: [String: String] = Dictionary(uniqueKeysWithValues: ids.map { ($0, $0) })
+        func root(_ id: String) -> String {
+            var current = id
+            while let next = parent[current], next != current { current = next }
+            return current
+        }
+        for (index, first) in ids.enumerated() {
+            for second in ids.dropFirst(index + 1) {
+                guard let left = database[first], let right = database[second], cosine(left, right) >= threshold else { continue }
+                let (a, b) = (root(first), root(second))
+                if a != b { parent[max(a, b)] = min(a, b) }
+            }
+        }
+        return Dictionary(uniqueKeysWithValues: ids.map { ($0, root($0)) })
+    }
+
+    /// The identity owning a stretch of speech: the one it overlaps most, or — where the diarizer
+    /// left a gap — the nearest one within `reach`. Requiring an overlap left 30 % of the system
+    /// track with no speaker at all on the 9 September recording.
+    public static func speaker(from start: Double, to end: Double, in spans: [SpeakerSpan], reach: Double = speakerReachSeconds) -> String? {
+        var bestOverlap = 0.0, overlapping: String?
+        var bestDistance = Double.infinity, nearest: String?
+        for span in spans.sorted(by: { $0.start < $1.start }) {
+            let overlap = min(end, span.end) - max(start, span.start)
+            if overlap > bestOverlap { bestOverlap = overlap; overlapping = span.speaker }
+            let distance = max(0, max(span.start - end, start - span.end))
+            if distance < bestDistance { bestDistance = distance; nearest = span.speaker }
+        }
+        if let overlapping { return overlapping }
+        return bestDistance <= reach ? nearest : nil
+    }
     public static func matchVoice(_ embedding: [Float], profiles: [VoiceProfile]) -> String? {
         let ranks = profiles.map { ($0.name, cosine(embedding, $0.embedding)) }.sorted { $0.1 > $1.1 }
         guard let best = ranks.first, best.1 >= 0.8, ranks.count == 1 || best.1 - ranks[1].1 >= 0.1 else { return nil }

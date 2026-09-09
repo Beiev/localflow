@@ -115,13 +115,17 @@ public actor SpeakerEngine {
         manager.initialize(models: models)
         let result = try await manager.process(audio)
         var updated = session
-        updated.embeddings = result.speakerDatabase ?? [:]
+        let database = result.speakerDatabase ?? [:]
+        let representative = TextSafety.mergeIdentities(database)
+        // Only surviving voices stay nameable in the interface.
+        updated.embeddings = database.filter { representative[$0.key] == $0.key }
+        let spans = result.segments.map { span in
+            SpeakerSpan(start: Double(span.startTimeSeconds), end: Double(span.endTimeSeconds),
+                        speaker: representative[span.speakerId] ?? span.speakerId)
+        }
         for index in updated.segments.indices where updated.segments[index].source == "system" {
             let segment = updated.segments[index]
-            let best = result.segments.max { a,b in
-                overlap(segment, a) < overlap(segment, b)
-            }
-            if let best, overlap(segment, best) > 0 { updated.segments[index].speaker = best.speakerId }
+            updated.segments[index].speaker = TextSafety.speaker(from: segment.start, to: segment.end, in: spans)
         }
         for (id, embedding) in updated.embeddings where updated.speakers[id] == nil {
             if let name = TextSafety.matchVoice(embedding, profiles: profiles) { updated.speakers[id] = name }

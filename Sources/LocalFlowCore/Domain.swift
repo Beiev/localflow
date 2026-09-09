@@ -77,6 +77,13 @@ public struct RecordingSession: Codable, Identifiable, Sendable {
         segments.sorted { $0.start < $1.start }.map { "[\($0.timestamp)] \(speakerName($0.speaker, source: $0.source)): \($0.text)" }.joined(separator: "\n")
     }
 }
+/// A stretch of audio the diarizer attributed to one identity.
+public struct SpeakerSpan: Sendable {
+    public var start: Double
+    public var end: Double
+    public var speaker: String
+    public init(start: Double, end: Double, speaker: String) { self.start = start; self.end = end; self.speaker = speaker }
+}
 public struct DictionaryEntry: Codable, Identifiable, Sendable {
     public var id = UUID()
     public var heard: String
