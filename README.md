@@ -4,8 +4,6 @@
 
 LocalFlow is an open, privacy-first alternative to Wispr Flow built for Apple Silicon. Press **⌘B**, speak anywhere, and get clean, edited text pasted into the field you were typing in. Record calls with one shortcut, keep a voice diary, and ask questions across your own searchable archive — with every model running locally.
 
-![LocalFlow main window](docs/screenshots/main-light.png)
-
 ## What it does
 
 - **Dictate anywhere (⌘B).** A floating window shows your words live while you speak — stable text plus a dimmed draft tail, a word counter, and a voice-level waveform that dances with your loudness. Resize it like any window (it remembers position and dimensions). Press ⌘B again and the window stays visible while the transcript is finalized and edited on device, then inserts the result at the cursor and dismisses itself. Escape cancels; the clipboard is restored after pasting. If the target field truly cannot receive text, a small fallback panel keeps the result one click away.
@@ -57,7 +55,7 @@ Everything lives in `~/Library/Application Support/LocalFlow/`: a SQLite archive
 Sources/LocalFlowCore/   engine: audio capture, ASR/LLM/diarization, safety guards, SQLite store
 Sources/LocalFlow/       SwiftUI app: overlay panel, archive, diary, settings
 Sources/LocalFlowBench/  CLI benchmarking harness (ASR/editor/diarization pipelines)
-Sources/LocalFlowShots/  deterministic UI screenshot generator (README images)
+Sources/LocalFlowShots/  offscreen UI screenshot generator (local tooling)
 Scripts/                 build, test, install, signing, model pinning, editor bake-off
 docs/                    architecture, plan, validation log, benchmarks, product strategy
 ```
