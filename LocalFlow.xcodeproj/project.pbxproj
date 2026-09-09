@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		059BC32B3CD428CBF168119C /* EditPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 070F39F1997C2AB1941F8A8B /* EditPlanTests.swift */; };
 		0C2CA589A7DAA62CFA5C1EAD /* Bench.swift in Sources */ = {isa = PBXBuildFile; fileRef = 766B33FEF832846BFA4FFAD7 /* Bench.swift */; };
 		194F8EB804FD2B579B658F8D /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE5540CAF5717E62EF3F28E8 /* AppModel.swift */; };
 		1C72ABBAF3AD69832A6060C9 /* LocalFlowCore in Frameworks */ = {isa = PBXBuildFile; productRef = 90EBA0D15AC91B52856C9B49 /* LocalFlowCore */; };
@@ -28,6 +29,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		070F39F1997C2AB1941F8A8B /* EditPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditPlanTests.swift; sourceTree = "<group>"; };
 		25DCB08E0CE2C10BC1E6A89A /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		33A52AFE244900698303D55F /* LiveTranscriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveTranscriptTests.swift; sourceTree = "<group>"; };
 		39FDC656F128B9400E0EC928 /* SystemIntegration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemIntegration.swift; sourceTree = "<group>"; };
@@ -128,6 +130,7 @@
 			isa = PBXGroup;
 			children = (
 				DB3E9541B269457C1F3F8855 /* CoreTests.swift */,
+				070F39F1997C2AB1941F8A8B /* EditPlanTests.swift */,
 				DB014DC10D16B7AF64C2A969 /* TranscriberTests.swift */,
 			);
 			name = LocalFlowCoreTests;
@@ -319,6 +322,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E45955EB14AD0120B3D8B142 /* CoreTests.swift in Sources */,
+				059BC32B3CD428CBF168119C /* EditPlanTests.swift in Sources */,
 				A1D4AC27EB1BFC1CB0E1D002 /* TranscriberTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

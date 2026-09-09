@@ -1,0 +1,25 @@
+{
+  "elapsed_s" : 9.3304939270019531,
+  "footprint_mb" : 257.29774475097656,
+  "identities_after" : [
+    "S1",
+    "S2"
+  ],
+  "identities_before" : [
+    "S1",
+    "S2",
+    "S3"
+  ],
+  "session" : "42CBF8CC-4686-452B-96F9-D7D80CE6F56F",
+  "system_segments_before" : {
+    "—" : 32,
+    "S1" : 32,
+    "S2" : 37,
+    "S3" : 5
+  },
+  "system_turns_after" : {
+    "—" : 7,
+    "S1" : 38,
+    "S2" : 15
+  }
+}

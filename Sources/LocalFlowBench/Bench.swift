@@ -72,6 +72,82 @@ struct Bench {
                 let result = try await engine.edit(text, mode: .clean, dictionary: [])
                 print(result.text); if result.guarded { print("proposals=\(result.proposals)") }; print("guarded=\(result.guarded) elapsed_s=\(Date().timeIntervalSince(start)) footprint_mb=\(ProcessMetrics.footprintMB)")
                 await engine.unload(); print("after_unload_mb=\(ProcessMetrics.footprintMB)")
+            case "summarize":
+                // Re-summarizes an archive entry with the current code and reports the numbers,
+                // without writing anything back: the "after" for a run that was already recorded.
+                guard args.count >= 2 else { throw LocalFlowError.message("summarize SESSION_PREFIX [OUTPUT.json]") }
+                let wanted = args[1].lowercased()
+                let store = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"))
+                guard let session = try store.sessions().first(where: { $0.id.uuidString.lowercased().hasPrefix(wanted) }) else {
+                    throw LocalFlowError.message("No session starts with \(args[1])")
+                }
+                var regrouped = session
+                regrouped.segments = TranscriptAssembly.group(session.segments)
+                let source = regrouped.referencedText
+                let speechCharacters = session.segments.reduce(0) { $0 + $1.text.count }
+                let previous = session.versions.last(where: { $0.mode == .summary })?.text.count ?? 0
+                let engine = TextEngine()
+                let start = Date()
+                let result = try await engine.edit(source, mode: .summary, dictionary: try store.dictionary())
+                let elapsed = Date().timeIntervalSince(start)
+                var row: [String: Any] = [:]
+                row["session"] = session.id.uuidString
+                row["duration_s"] = session.duration
+                row["segments_before"] = session.segments.count
+                row["turns_after"] = regrouped.segments.count
+                row["speech_characters"] = speechCharacters
+                row["referenced_characters"] = source.count
+                row["chunks"] = TextSafety.chunks(source).count
+                row["model_calls"] = result.proposals.count
+                row["previous_summary_characters"] = previous
+                row["summary_characters"] = result.text.count
+                row["summary_share_of_speech"] = Double(result.text.count) / Double(max(1, speechCharacters))
+                row["cited_times"] = result.text.ranges(of: try Regex("\\[\\d{2,}:\\d{2}\\]")).count
+                row["cited_times_all_exist"] = TextSafety.citedTimesExist(in: result.text, source: source)
+                row["elapsed_s"] = elapsed
+                row["footprint_mb"] = ProcessMetrics.footprintMB
+                // Numbers only. The transcript and the summary are the owner's private material;
+                // benchmark files live in a public repository, so the text goes to stdout instead.
+                let summaryData = try JSONSerialization.data(withJSONObject: row, options: [.prettyPrinted, .sortedKeys])
+                if args.count > 2 { try summaryData.write(to: URL(fileURLWithPath: args[2]), options: .atomic) }
+                print("segments_before=\(session.segments.count) turns_after=\(regrouped.segments.count)")
+                print("speech_characters=\(speechCharacters) referenced=\(source.count) chunks=\(TextSafety.chunks(source).count) model_calls=\(result.proposals.count)")
+                print("previous_summary=\(previous) summary=\(result.text.count) share=\(Double(result.text.count) / Double(max(1, speechCharacters)))")
+                print("cited_times_all_exist=\(TextSafety.citedTimesExist(in: result.text, source: source)) elapsed_s=\(elapsed) footprint_mb=\(ProcessMetrics.footprintMB)")
+                print("--- summary ---"); print(result.text)
+                await engine.unload()
+            case "diarize":
+                // Re-runs speaker separation over an archive entry's system track and reports the
+                // identity map, without writing anything back.
+                guard args.count >= 2 else { throw LocalFlowError.message("diarize SESSION_PREFIX [OUTPUT.json]") }
+                let target = args[1].lowercased()
+                let archive = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"))
+                guard let stored = try archive.sessions().first(where: { $0.id.uuidString.lowercased().hasPrefix(target) }) else {
+                    throw LocalFlowError.message("No session starts with \(args[1])")
+                }
+                let recording = stored.id
+                let track = try await Task.detached { try AudioFiles.joinedTrack(recording, source: "system") }.value
+                defer { try? FileManager.default.removeItem(at: track) }
+                var input = stored
+                input.segments = TranscriptAssembly.group(stored.segments)
+                let began = Date()
+                let annotated = try await SpeakerEngine().annotate(input, audio: track, profiles: try archive.voices())
+                func census(_ session: RecordingSession) -> [String: Int] {
+                    var counts: [String: Int] = [:]
+                    for segment in session.segments where segment.source == "system" { counts[segment.speaker ?? "—"] = (counts[segment.speaker ?? "—"] ?? 0) + 1 }
+                    return counts
+                }
+                var report: [String: Any] = [:]
+                report["session"] = stored.id.uuidString
+                report["identities_before"] = stored.embeddings.keys.sorted()
+                report["identities_after"] = annotated.embeddings.keys.sorted()
+                report["system_segments_before"] = census(stored)
+                report["system_turns_after"] = census(annotated)
+                report["elapsed_s"] = Date().timeIntervalSince(began)
+                report["footprint_mb"] = ProcessMetrics.footprintMB
+                let reportData = try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+                if args.count > 2 { try reportData.write(to: URL(fileURLWithPath: args[2]), options: .atomic) }
+                print(String(decoding: reportData, as: UTF8.self))
             case "batch":
                 guard args.count > 2 else { throw LocalFlowError.message("batch MANIFEST OUTPUT") }
                 let data = try Data(contentsOf: URL(fileURLWithPath: args[1]))

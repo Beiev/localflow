@@ -1,0 +1,18 @@
+{
+  "chunks": 5,
+  "cited_times": 44,
+  "cited_times_all_exist": true,
+  "duration_s": 1762.9391207498963,
+  "elapsed_s": 321.3680659532547,
+  "footprint_mb": 2852.6905212402344,
+  "model_calls": 13,
+  "note": "Metrics only. Transcript text is private and never written into the repository.",
+  "previous_summary_characters": 19944,
+  "referenced_characters": 24236,
+  "segments_before": 485,
+  "session": "42CBF8CC-4686-452B-96F9-D7D80CE6F56F",
+  "speech_characters": 21892,
+  "summary_characters": 6095,
+  "summary_share_of_speech": 0.2784122053718253,
+  "turns_after": 120
+}
