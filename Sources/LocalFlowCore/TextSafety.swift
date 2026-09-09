@@ -62,6 +62,15 @@ public enum TextSafety {
         if !current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { chunks.append(current) }
         return chunks
     }
+    private static func allMatches(_ pattern: String, _ text: String) -> Set<String> {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        return Set(regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { match in Range(match.range, in: text).map { String(text[$0]) } })
+    }
+    /// Every [мм:сс] in the text must exist in the source. Carrying no timestamp at all is fine;
+    /// carrying one that was never spoken is not.
+    public static func citedTimesExist(in text: String, source: String) -> Bool {
+        allMatches("\\[\\d{2,}:\\d{2}\\]", text).isSubset(of: allMatches("\\[\\d{2,}:\\d{2}\\]", source))
+    }
     public static func hasValidCitations(_ answer: String, evidence: String) -> Bool {
         func matches(_ pattern: String, in text: String) -> Set<String> {
             guard let regex = try? NSRegularExpression(pattern: pattern, options: .anchorsMatchLines) else { return [] }

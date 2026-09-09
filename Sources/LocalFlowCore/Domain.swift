@@ -7,6 +7,19 @@ public enum SessionKind: String, Codable, CaseIterable, Sendable {
 public enum ProcessingMode: String, Codable, CaseIterable, Sendable {
     case clean, compose, summary, specification, tasks
     public var title: String { switch self { case .clean: "Аккуратно"; case .compose: "Связный текст"; case .summary: "Краткое резюме"; case .specification: "ТЗ"; case .tasks: "Список задач" } }
+    /// True when the mode exists to make the material shorter. Such a mode cannot be applied
+    /// chunk by chunk and concatenated: the parts have to be merged by a second pass.
+    public var condenses: Bool { switch self { case .summary, .specification, .tasks: true; case .clean, .compose: false } }
+    /// Shown while the model works. Summarizing a meeting is not editing a dictation, and saying
+    /// "Редактирую…" for it is what made a summary read as an unwanted edit.
+    public var progressTitle: String {
+        switch self {
+        case .clean, .compose: "Редактирую…"
+        case .summary: "Собираю конспект…"
+        case .specification: "Собираю ТЗ…"
+        case .tasks: "Извлекаю задачи…"
+        }
+    }
 }
 public struct TranscriptSegment: Codable, Identifiable, Equatable, Sendable {
     public var id: UUID
