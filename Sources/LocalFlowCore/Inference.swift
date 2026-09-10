@@ -59,7 +59,12 @@ public actor TextEngine {
     private var idleTask: Task<Void, Never>?
     public private(set) var coldStartSeconds: Double = 0
     public init() {}
-    private func response(_ prompt: String, instructions: String) async throws -> String {
+    /// Condensing reads a whole meeting at once, so it needs a cache that holds one. The model
+    /// itself is good for 131 072 tokens; 8192 was our own cap, and with a rotating cache it
+    /// silently overwrote the beginning of a long transcript.
+    private static let condensingKVSize = 32768
+    private static let editingKVSize = 8192
+    private func response(_ prompt: String, instructions: String, kvSize: Int = editingKVSize) async throws -> String {
         idleTask?.cancel()
         await gate.acquire()
         do {
@@ -74,7 +79,7 @@ public actor TextEngine {
                 loadedID = package.id
                 coldStartSeconds = Date().timeIntervalSince(start)
             }
-            let chat = ChatSession(model!, instructions: instructions, generateParameters: .init(maxTokens: 3072, maxKVSize: 8192, temperature: 0))
+            let chat = ChatSession(model!, instructions: instructions, generateParameters: .init(maxTokens: 3072, maxKVSize: kvSize, temperature: 0))
             let answer = try await chat.respond(to: prompt)
             await gate.release()
             scheduleUnload(after: Double(UserDefaults.standard.integer(forKey: "editorIdleSeconds").nonzero(default: 60)))
@@ -86,8 +91,9 @@ public actor TextEngine {
         }
     }
     public func edit(_ text: String, mode: ProcessingMode, dictionary: [DictionaryEntry], style: String = "") async throws -> (text: String, guarded: Bool, proposals: [String]) {
-        try await EditPlan.run(text: text, mode: mode, dictionary: dictionary, style: style) { [self] prompt, instructions in
-            try await response(prompt, instructions: instructions)
+        let kvSize = mode.condenses ? Self.condensingKVSize : Self.editingKVSize
+        return try await EditPlan.run(text: text, mode: mode, dictionary: dictionary, style: style) { [self] prompt, instructions in
+            try await response(prompt, instructions: instructions, kvSize: kvSize)
         }
     }
     public func answer(_ question: String, evidence: String) async throws -> String {

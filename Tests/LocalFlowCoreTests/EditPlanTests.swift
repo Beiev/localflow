@@ -22,30 +22,37 @@ final class EditPlanTests: XCTestCase {
             return String(format: "[%02d:%02d] Я: ", minute, second) + String(repeating: "слово ", count: 30) + "."
         }.joined(separator: "\n")
     }
+    /// Enough turns to exceed one condensing pass, so the merge path is exercised.
+    private let mergingTurns = 400
+    private func condensingChunks(_ source: String) -> Int {
+        TextSafety.chunks(source, maxCharacters: EditPlan.condensingChunkCharacters).count
+    }
     private func run(_ text: String, mode: ProcessingMode, stub: StubResponder) async throws -> (text: String, guarded: Bool, proposals: [String]) {
         try await EditPlan.run(text: text, mode: mode, dictionary: []) { prompt, instructions in
             try await stub.respond(prompt, instructions)
         }
     }
 
-    func testShortSummaryIsOneCallWithoutAMergePass() async throws {
-        let stub = StubResponder { _, _, _ in "Главное: одно. [00:00]" }
+    func testMaterialThatFitsIsReadInOnePass() async throws {
+        // Splitting material that fits measurably hurt the result, so a call this size is read
+        // whole and the structure comes straight out of that single pass.
+        let stub = StubResponder { _, _, _ in "**О чём** Коротко. [00:00]" }
         let source = "[00:00] Я: короткая запись."
         let result = try await run(source, mode: .summary, stub: stub)
         let calls = await stub.calls
         XCTAssertEqual(calls, 1)
-        XCTAssertEqual(result.text, "Главное: одно. [00:00]")
+        XCTAssertEqual(result.text, "**О чём** Коротко. [00:00]")
         let instruction = await stub.instructions[0]
-        XCTAssertTrue(instruction.contains("Уложись в"), "a condensing mode must carry a length budget")
+        XCTAssertTrue(instruction.contains("«О чём»"), "one pass owns the structure itself")
         XCTAssertFalse(instruction.contains("Это часть"), "a single chunk is not a part of anything")
     }
 
     func testLongSummaryMergesNotesIntoOneDocument() async throws {
-        let stub = StubResponder { index, _, _ in index < 3 ? "Заметки части \(index). [00:00]" : "Сведённый конспект. [00:00]" }
-        let source = transcript(turns: 80)
-        XCTAssertGreaterThan(TextSafety.chunks(source).count, 1)
+        let stub = StubResponder { index, prompt, _ in prompt.contains("<материал>") ? "Заметки части \(index). [00:00]" : "Сведённый конспект. [00:00]" }
+        let source = transcript(turns: mergingTurns)
+        XCTAssertGreaterThan(condensingChunks(source), 1)
         let result = try await run(source, mode: .summary, stub: stub)
-        let chunks = TextSafety.chunks(source).count
+        let chunks = condensingChunks(source)
         let calls = await stub.calls
         XCTAssertEqual(calls, chunks + 1, "one pass per chunk plus one merge")
         XCTAssertEqual(result.text, "Сведённый конспект. [00:00]")
@@ -59,7 +66,7 @@ final class EditPlanTests: XCTestCase {
 
     func testEditingModesKeepConcatenatingChunks() async throws {
         let stub = StubResponder { index, _, _ in "часть \(index)" }
-        let source = transcript(turns: 80)
+        let source = transcript(turns: mergingTurns)
         let chunks = TextSafety.chunks(source).count
         let result = try await run(source, mode: .clean, stub: stub)
         let calls = await stub.calls
@@ -70,9 +77,9 @@ final class EditPlanTests: XCTestCase {
     }
 
     func testMergeThatInventsATimestampIsDiscarded() async throws {
-        let stub = StubResponder { index, _, _ in index < 3 ? "Заметки \(index). [00:00]" : "Выдумка про [99:59]." }
-        let source = transcript(turns: 80)
-        let chunks = TextSafety.chunks(source).count
+        let stub = StubResponder { index, prompt, _ in prompt.contains("<материал>") ? "Заметки \(index). [00:00]" : "Выдумка про [99:59]." }
+        let source = transcript(turns: mergingTurns)
+        let chunks = condensingChunks(source)
         let result = try await run(source, mode: .summary, stub: stub)
         XCTAssertEqual(result.text, (0..<chunks).map { "Заметки \($0). [00:00]" }.joined(separator: "\n\n"))
         XCTAssertTrue(result.proposals.contains("Выдумка про [99:59]."), "the rejected proposal stays available")
@@ -80,30 +87,30 @@ final class EditPlanTests: XCTestCase {
 
     func testFailingMergeStillReturnsTheNotes() async throws {
         struct Refused: Error {}
-        let stub = StubResponder { index, _, _ in
-            if index >= 3 { throw Refused() }
+        let stub = StubResponder { index, prompt, _ in
+            if prompt.contains("<заметки>") { throw Refused() }
             return "Заметки \(index)."
         }
-        let source = transcript(turns: 80)
-        let chunks = TextSafety.chunks(source).count
+        let source = transcript(turns: mergingTurns)
+        let chunks = condensingChunks(source)
         let result = try await run(source, mode: .summary, stub: stub)
         XCTAssertEqual(result.text, (0..<chunks).map { "Заметки \($0)." }.joined(separator: "\n\n"))
     }
 
     func testCancelledMergeReachesTheCaller() async throws {
-        let stub = StubResponder { index, _, _ in
-            if index >= 3 { throw CancellationError() }
+        let stub = StubResponder { index, prompt, _ in
+            if prompt.contains("<заметки>") { throw CancellationError() }
             return "Заметки \(index)."
         }
-        let source = transcript(turns: 80)
+        let source = transcript(turns: mergingTurns)
         do { _ = try await run(source, mode: .summary, stub: stub); XCTFail("cancellation must not be swallowed") }
         catch is CancellationError { }
     }
 
     func testTasksAndSpecificationAlsoMerge() async throws {
         for mode in [ProcessingMode.tasks, .specification] {
-            let stub = StubResponder { index, _, _ in index < 3 ? "Заметки \(index)." : "Сведено." }
-            let result = try await run(transcript(turns: 80), mode: mode, stub: stub)
+            let stub = StubResponder { index, prompt, _ in prompt.contains("<материал>") ? "Заметки \(index)." : "Сведено." }
+            let result = try await run(transcript(turns: mergingTurns), mode: mode, stub: stub)
             XCTAssertEqual(result.text, "Сведено.", "\(mode) condenses and must merge")
         }
     }
@@ -111,12 +118,13 @@ final class EditPlanTests: XCTestCase {
     func testOversizedNotesAreFoldedBeforeTheFinalMerge() async throws {
         // Notes far larger than one context: on the first real run two of five came back four
         // times over the asked length, so the plan must fold before merging.
-        let oversized = String(repeating: "нота ", count: 1500)
+        // Distinct per chunk: identical notes would be collapsed as duplicates, which is correct
+        // behaviour but would leave nothing to fold.
         let stub = StubResponder { index, prompt, _ in
-            prompt.contains("<материал>") ? oversized : "Свёрнуто \(index)."
+            prompt.contains("<материал>") ? String(repeating: "нота\(index) ", count: 6000) : "Свёрнуто \(index)."
         }
-        let source = transcript(turns: 80)
-        let chunks = TextSafety.chunks(source).count
+        let source = transcript(turns: mergingTurns)
+        let chunks = condensingChunks(source)
         let result = try await run(source, mode: .summary, stub: stub)
         let calls = await stub.calls
         XCTAssertGreaterThan(calls, chunks + 1, "oversized notes have to be folded first")
