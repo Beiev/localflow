@@ -97,7 +97,8 @@ struct Bench {
                 row["turns_after"] = regrouped.segments.count
                 row["speech_characters"] = speechCharacters
                 row["referenced_characters"] = source.count
-                row["chunks"] = TextSafety.chunks(source).count
+                // Report the split the condensing path actually uses, not the editing default.
+                row["chunks"] = TextSafety.chunks(source, maxCharacters: EditPlan.condensingChunkCharacters).count
                 row["model_calls"] = result.proposals.count
                 row["previous_summary_characters"] = previous
                 row["summary_characters"] = result.text.count
@@ -111,7 +112,7 @@ struct Bench {
                 let summaryData = try JSONSerialization.data(withJSONObject: row, options: [.prettyPrinted, .sortedKeys])
                 if args.count > 2 { try summaryData.write(to: URL(fileURLWithPath: args[2]), options: .atomic) }
                 print("segments_before=\(session.segments.count) turns_after=\(regrouped.segments.count)")
-                print("speech_characters=\(speechCharacters) referenced=\(source.count) chunks=\(TextSafety.chunks(source).count) model_calls=\(result.proposals.count)")
+                print("speech_characters=\(speechCharacters) referenced=\(source.count) chunks=\(TextSafety.chunks(source, maxCharacters: EditPlan.condensingChunkCharacters).count) model_calls=\(result.proposals.count)")
                 print("previous_summary=\(previous) summary=\(result.text.count) share=\(Double(result.text.count) / Double(max(1, speechCharacters)))")
                 print("cited_times_all_exist=\(TextSafety.citedTimesExist(in: result.text, source: source)) elapsed_s=\(elapsed) footprint_mb=\(ProcessMetrics.footprintMB)")
                 print("--- summary ---"); print(result.text)
