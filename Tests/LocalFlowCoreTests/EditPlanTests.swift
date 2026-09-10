@@ -125,9 +125,25 @@ final class EditPlanTests: XCTestCase {
     }
     func testEveryCondensingInstructionCarriesTheCitationRule() async throws {
         let stub = StubResponder { _, _, _ in "Пункт. [00:10]" }
-        _ = try await run(transcript(turns: 80), mode: .summary, stub: stub)
+        _ = try await run(transcript(turns: mergingTurns), mode: .summary, stub: stub)
         let instructions = await stub.instructions
         for instruction in instructions { XCTAssertTrue(instruction.contains("[мм:сс]"), "both passes must ask for timestamps") }
+    }
+    func testChunkNotesAreRawMaterialAndTheMergeOwnsTheStructure() async throws {
+        let stub = StubResponder { _, _, _ in "Факт. [00:10]" }
+        _ = try await run(transcript(turns: mergingTurns), mode: .summary, stub: stub)
+        let instructions = await stub.instructions
+        XCTAssertTrue(instructions[0].contains("Без заголовков"), "a chunk is material for the merge, not a summary of its own")
+        XCTAssertTrue(instructions.last!.contains("«О чём»"), "the merge owns the structure")
+    }
+    func testLoopedModelOutputNeverReachesTheResult() async throws {
+        let loop = Array(repeating: "Согласовано, что нужно делать (делать).", count: 50).joined(separator: "\n")
+        let stub = StubResponder { _, prompt, _ in prompt.contains("<материал>") ? loop : "Сведено. [00:00]" }
+        let result = try await run(transcript(turns: mergingTurns), mode: .summary, stub: stub)
+        XCTAssertEqual(result.text, "Сведено. [00:00]")
+        for proposal in result.proposals {
+            XCTAssertLessThan(proposal.components(separatedBy: "Согласовано").count, 3, "a loop must be collapsed before it is used")
+        }
     }
     func testCitedTimesMustExistInTheSource() {
         XCTAssertTrue(TextSafety.citedTimesExist(in: "Факт [01:20] и вывод.", source: "[01:20] Я: факт."))

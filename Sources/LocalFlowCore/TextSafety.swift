@@ -62,6 +62,22 @@ public enum TextSafety {
         if !current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { chunks.append(current) }
         return chunks
     }
+    /// Shortest line worth de-duplicating. Below this a repeat is punctuation or a heading,
+    /// not a generation loop.
+    public static let repeatableLineFloor = 12
+    /// Drops lines the model repeated verbatim, keeping the first. A real 35-minute meeting came
+    /// back with the same line 202 times out of 389: a generation loop, delivered whole.
+    public static func collapseRepetitions(_ text: String) -> (text: String, removed: Int) {
+        var seen = Set<String>()
+        var kept: [String] = []
+        var removed = 0
+        for line in text.components(separatedBy: .newlines) {
+            let key = line.trimmingCharacters(in: CharacterSet(charactersIn: " \t*-•—#>")).lowercased()
+            guard key.count >= repeatableLineFloor else { kept.append(line); continue }
+            if seen.insert(key).inserted { kept.append(line) } else { removed += 1 }
+        }
+        return (kept.joined(separator: "\n"), removed)
+    }
     private static func allMatches(_ pattern: String, _ text: String) -> Set<String> {
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
         return Set(regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { match in Range(match.range, in: text).map { String(text[$0]) } })

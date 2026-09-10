@@ -41,17 +41,27 @@ public enum EditPlan {
             try Task.checkCancellation()
             var step = instruction
             if mode.condenses {
-                step += merging
-                    ? "\nЭто часть \(index + 1) из \(chunks.count). Выпиши только заметки по этой части, без вступления и без выводов обо всём материале; уложись в \(noteBudget) знаков."
-                    : "\nУложись в \(budget) знаков."
+                if merging {
+                    // Notes are raw material for the merge, not little summaries. Asking each chunk
+                    // for a full конспект is what produced five "Главное:" sections in one document.
+                    step = Self.noteInstruction(mode) + styleNote
+                        + (chunks.count > 1
+                            ? "\nЭто часть \(index + 1) из \(chunks.count); уложись в \(noteBudget) знаков."
+                            : "\nУложись в \(noteBudget) знаков.")
+                } else {
+                    step += "\nУложись в \(budget) знаков."
+                }
                 step += Self.citationRule
             }
-            let edited = try await respond("<материал>\n\(chunk)\n</материал>", step)
+            let edited = TextSafety.collapseRepetitions(try await respond("<материал>\n\(chunk)\n</материал>", step)).text
             proposals.append(edited)
             let reviewed = TextSafety.reviewEdit(original: chunk, edited: edited, mode: mode)
             parts.append(reviewed.text); guarded = guarded || reviewed.requiresReview
         }
-        let joined = parts.joined(separator: "\n\n")
+        // Notes are collapsed once more together: each was de-duplicated on its own, but the same
+        // line can still arrive from several chunks, and this joined text is both what the merge
+        // reads and what the caller falls back to.
+        let joined = TextSafety.collapseRepetitions(parts.joined(separator: "\n\n")).text
         guard merging else { return (joined, guarded, proposals) }
         // Second pass. Without it the per-chunk notes were simply concatenated: on a real
         // 29-minute call that produced 19 944 characters out of 21 892 characters of speech,
@@ -62,17 +72,17 @@ public enum EditPlan {
             // five notes came back four times over their asked length, so folding is not optional.
             var notes = joined
             var round = 0
-            while round < Self.mergeRounds, TextSafety.chunks(notes).count > 1 {
+            while round < Self.mergeRounds, TextSafety.chunks(notes, maxCharacters: Self.condensingChunkCharacters).count > 1 {
                 var folded: [String] = []
-                for group in TextSafety.chunks(notes) {
+                for group in TextSafety.chunks(notes, maxCharacters: Self.condensingChunkCharacters) {
                     try Task.checkCancellation()
-                    let step = try await respond("<заметки>\n\(group)\n</заметки>", Self.mergeInstruction(mode) + styleNote + "\nУложись в \(noteBudget) знаков." + Self.citationRule)
+                    let step = TextSafety.collapseRepetitions(try await respond("<заметки>\n\(group)\n</заметки>", Self.mergeInstruction(mode) + styleNote + "\nУложись в \(noteBudget) знаков." + Self.citationRule)).text
                     proposals.append(step); folded.append(step)
                 }
                 notes = folded.joined(separator: "\n\n"); round += 1
             }
             try Task.checkCancellation()
-            let merged = try await respond("<заметки>\n\(notes)\n</заметки>", Self.mergeInstruction(mode) + styleNote + "\nУложись в \(budget) знаков." + Self.citationRule)
+            let merged = TextSafety.collapseRepetitions(try await respond("<заметки>\n\(notes)\n</заметки>", Self.mergeInstruction(mode) + styleNote + "\nУложись в \(budget) знаков." + Self.citationRule)).text
             proposals.append(merged)
             // A merge that invents a timestamp is discarded; the notes themselves can only carry
             // timestamps that were in the material.

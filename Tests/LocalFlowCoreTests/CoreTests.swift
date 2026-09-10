@@ -168,6 +168,19 @@ final class CoreTests: XCTestCase {
     }
     func testKnownVoiceMatched() { XCTAssertEqual(TextSafety.matchVoice([1,0], profiles: [VoiceProfile(name: "A", embedding: [1,0])]), "A") }
     func testZeroEmbedding() { XCTAssertEqual(TextSafety.cosine([0,0],[0,0]), 0) }
+    func testGenerationLoopIsCollapsed() {
+        // Shape taken from a real 35-minute meeting summary: 202 identical lines out of 389.
+        let looped = (["**Решения:**"] + Array(repeating: "*   Согласовано, что нужно делать (делать).", count: 202)).joined(separator: "\n")
+        let result = TextSafety.collapseRepetitions(looped)
+        XCTAssertEqual(result.removed, 201)
+        XCTAssertEqual(result.text.components(separatedBy: "\n").count, 2)
+    }
+    func testCollapseLeavesDistinctAndShortLinesAlone() {
+        let text = "**Решения:**\n*   Первое решение целиком.\n*   Второе решение целиком.\n\n---\n\n**Решения:**"
+        let result = TextSafety.collapseRepetitions(text)
+        XCTAssertEqual(result.removed, 0)
+        XCTAssertEqual(result.text, text)
+    }
     func testIdentitiesOfOneVoiceAreMerged() {
         // Shaped after the 9 September recording: two halves of one voice, one distinct voice.
         let database: [String: [Float]] = ["S1": [1, 0, 0], "S2": [0, 1, 0], "S3": [0.9, 0.1, 0]]
