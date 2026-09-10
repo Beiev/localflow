@@ -123,7 +123,9 @@ struct MainView: View {
                 Text(model.status).fontWeight(.medium)
                 Spacer()
                 Text(Duration.seconds(model.elapsed).formatted(.time(pattern: .minuteSecond))).monospacedDigit()
-                Button("Показать окно") { model.overlay.show(model: model) }
+                // The floating window belongs to dictation; a meeting is driven from here and
+                // from the menu bar item.
+                if model.active?.kind != .meeting { Button("Показать окно") { model.overlay.show(model: model) } }
                 if model.isRecording {
                     Button(model.paused ? "Продолжить" : "Пауза") { model.pause() }
                     Button("Завершить") { model.stop() }.buttonStyle(.borderedProminent)
