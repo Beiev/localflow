@@ -39,7 +39,8 @@ public struct TextVersion: Codable, Identifiable, Sendable {
     public var mode: ProcessingMode
     public var text: String
     public var label: String?
-    public init(mode: ProcessingMode, text: String, label: String? = nil) { self.mode = mode; self.text = text; self.label = label }
+    public var reviewIssues: [EditIssue]?
+    public init(mode: ProcessingMode, text: String, label: String? = nil, reviewIssues: [EditIssue]? = nil) { self.mode = mode; self.text = text; self.label = label; self.reviewIssues = reviewIssues }
 }
 public struct RecordingSession: Codable, Identifiable, Sendable {
     public var id = UUID()
@@ -58,6 +59,7 @@ public struct RecordingSession: Codable, Identifiable, Sendable {
     public var editingMode: ProcessingMode?
     public var editingStyle: String?
     public var expectedRemoteSpeakers: Int?
+    public var dictationMetrics: DictationMetrics?
     public var speakers: [String: String] = [:]
     public var embeddings: [String: [Float]] = [:]
     public init(kind: SessionKind) { self.kind = kind; self.title = kind.title + " " + Date().formatted(date: .abbreviated, time: .shortened) }

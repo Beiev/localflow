@@ -27,17 +27,17 @@ All weights are pinned to exact revisions with per-file checksums and downloaded
 
 The editor was chosen by a measured bake-off on a 10-case Russian dictation corpus ([docs/benchmarks](docs/benchmarks)): Gemma 4 E2B is ~2× faster than Qwen3-4B (0.32 s first token, ~76 tok/s) at equal or better fact preservation, and correctly handles self-corrections like *"send 12 files, not 15"*. Qwen3.5-4B was disqualified for silently changing meaning. Both remaining editors are selectable in Settings.
 
-**Safety rails.** Every edited draft passes deterministic guards (number multisets, negation counts, corrected-number patterns, length ratios). A suspicious edit is never silently trusted: the minimal deterministic cleanup is delivered instead, and the model's proposal is kept as a separate version. The original transcript is always preserved. Archive answers without valid citations are rejected.
+**Safety rails.** Every edited draft passes deterministic guards (ordered numbers with conservative separator handling, Russian/English negations and retained negation targets, corrected-number patterns, length ratios). A suspicious edit is never silently trusted: the minimal deterministic cleanup is delivered instead, and the model's proposal is kept as a separate version. The original transcript is always preserved. Rejected proposals carry specific review reasons, and dictation during meetings uses the same guarded delivery. These checks do not prove semantic equivalence. Archive answers without valid citations are rejected.
 
 ## Build & install
 
-Requirements: Apple Silicon Mac, Xcode 26+ with the Metal toolchain, [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+Requirements: Apple Silicon Mac, Xcode 26.6 with the Metal toolchain, [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 
 ```sh
 brew install xcodegen
 xcodebuild -downloadComponent MetalToolchain
 Scripts/build.sh     # xcodegen + xcodebuild Release + local signing
-Scripts/test.sh      # 55 unit/interface tests
+Scripts/test.sh      # 78 unit/interface tests; no model weights needed
 Scripts/install.sh   # installs to ~/Applications/LocalFlow.app
 ```
 
@@ -48,6 +48,14 @@ The build is signed with a persistent local certificate (stored outside the repo
 ## Data & privacy
 
 Everything lives in `~/Library/Application Support/LocalFlow/`: a SQLite archive with full-text search (`archive.sqlite`), chunked 30-second audio parts with a crash-safe journal, and checksum-verified model weights. Audio is pruned after 30 days (pinned items are kept), texts stay until you delete them, and there is no telemetry of any kind. Recording survives crashes: transcription is checkpointed per window and resumes where it stopped.
+
+Archive upgrades are transactional and create a local SQLite backup before changing an existing schema. Newer unsupported schemas are rejected. See [migration and recovery](docs/diagnostics.md#archive-migration-and-recovery).
+
+## Quality and contributing
+
+[Contributing](CONTRIBUTING.md) explains the development workflow and privacy rules for fixtures. GitHub Actions is configured to test and compile the app and benchmark harness on Apple Silicon. Hardware behavior and recognition accuracy still need separate real-world validation.
+
+[Local diagnostics](docs/diagnostics.md) report review reasons and processing latency without exporting speech. New regular dictations record stop-to-ready and insertion acknowledgment timings, grouped by build/editor and warm/cold model state. Old recordings have no latency metadata. Audio replay measurements explicitly exclude capture and insertion.
 
 ## Repository layout
 
@@ -61,7 +69,7 @@ docs/                    architecture, plan, validation log, benchmarks, product
 
 ## Status & roadmap
 
-v0.2.0 — daily-driver quality for the author's setup (M3 Pro / 18 GB, macOS 26): dictation, notes, meetings, archive Q&A, model choice. Known limits: diarization can merge similar voices; latency targets on real speech are still being measured; calendar/Slack/MCP integrations and mobile are future work. Full details: [docs/plan.md](docs/plan.md), [docs/validation.md](docs/validation.md), [docs/product-strategy.md](docs/product-strategy.md).
+v0.3.3 — daily-driver quality for the author's setup (M3 Pro / 18 GB, macOS 26): dictation, notes, meetings, archive Q&A, model choice. Known limits: diarization can merge similar voices; latency targets on real speech are still being measured; calendar/Slack/MCP integrations and mobile are future work. Full details: [docs/plan.md](docs/plan.md), [docs/validation.md](docs/validation.md), [docs/product-strategy.md](docs/product-strategy.md).
 
 ## License
 

@@ -44,6 +44,7 @@ final class AppModel: ObservableObject {
     let shortcut = GlobalShortcut()
     let insertion = TextInsertion()
     let overlay = OverlayController()
+    private var meetingDictationTask: Task<Void, Never>?
     private var processingTask: Task<Void, Never>?
     private var questionTask: Task<Void, Never>?
     private var questionRequestID = UUID()
@@ -136,14 +137,14 @@ final class AppModel: ObservableObject {
         refreshShortcut()
     }
     func toggleDictation() {
-        guard !isStarting, !preempting else { return }
+        guard !isStarting, !preempting, meetingDictationTask == nil else { return }
         if processing, let job = currentJobID, active?.kind != .dictation {
             insertion.capture(); preempting = true
             let task = processingTask
             task?.cancel()
             Task {
                 await task?.value
-                if var saved = (try? store.sessions())?.first(where: { $0.id == job }) {
+                if var saved = (try? store.session(job)) {
                     saved.state = "queued"; saved.error = "Обработка продолжится после диктовки."; try? store.save(saved)
                     resumeAfterDictation.append(job)
                 }
@@ -271,15 +272,17 @@ final class AppModel: ObservableObject {
         guard let session = active, !processing, !isStarting else { return }
         // The overlay stays visible through processing: the user watches the text
         // being finalized, and it hides only after the result is inserted.
+        let stoppedAt = ProcessInfo.processInfo.systemUptime
+        meetingDictationTask?.cancel()
         currentJobID = session.id
         processing = true; status = "Завершаю расшифровку…"; shortcut.recording = session.kind == .dictation
         liveTask?.cancel(); clockTask?.cancel(); dictationDuringMeeting = nil
         processingTask = Task {
             await capture.stop(); await liveTask?.value
             var saved = session; saved.duration = elapsed; saved.state = "processing"
-            do { try store.save(saved); try await process(saved, insert: session.kind == .dictation) }
+            do { try store.save(saved); try await process(saved, insert: session.kind == .dictation, stoppedAt: stoppedAt) }
             catch {
-                saved = (try? store.sessions())?.first(where: { $0.id == saved.id }) ?? saved
+                saved = (try? store.session(saved.id)) ?? saved
                 saved.state = "interrupted"; saved.error = Task.isCancelled ? "Обработка приостановлена" : error.localizedDescription
                 try? store.save(saved); if !Task.isCancelled { self.error = error.localizedDescription }; status = "Аудио сохранено · откройте архив для восстановления"
                 // The receipt panel is part of the dictation overlay; a meeting reports through
@@ -291,6 +294,7 @@ final class AppModel: ObservableObject {
         }
     }
     func quit() {
+        meetingDictationTask?.cancel()
         preempting = true; resumeAfterDictation = []
         liveTask?.cancel(); clockTask?.cancel(); processingTask?.cancel(); shortcut.recording = false
         Task {
@@ -303,6 +307,7 @@ final class AppModel: ObservableObject {
         }
     }
     func cancel() {
+        meetingDictationTask?.cancel()
         overlay.hide()
         waveform = []; audioLevel = 0
         if dictationDuringMeeting != nil { dictationDuringMeeting = nil; status = "Созвон продолжается"; return }
@@ -320,11 +325,21 @@ final class AppModel: ObservableObject {
         guard let session = sessions.first(where: { $0.id == id }) else { return }
         if let mode = session.pendingMode { transform(session, mode: mode) } else { retry(session) }
     }
-    func process(_ session: RecordingSession, insert: Bool = false) async throws {
+    func process(_ session: RecordingSession, insert: Bool = false, stoppedAt: Double? = nil) async throws {
+        let transcriptionStart = ProcessInfo.processInfo.systemUptime
+        var timing: DictationMetrics?
+        if insert, stoppedAt != nil {
+            let speechLoaded = await speech.isLoaded
+            let editorLoaded = await editor.isLoaded
+            timing = DictationMetrics(appVersion: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development",
+                editorID: installed.contains(ModelCatalog.editorPackageID()) ? ModelCatalog.editorPackageID() : nil,
+                speechWasLoaded: speechLoaded, editorWasLoaded: editorLoaded)
+        }
         status = await speech.isLoaded ? "Распознаю запись…" : "Загружаю распознаватель…"
         var result = try await SessionTranscriber(recognizer: speech, store: store).transcribe(session) { [weak self] current, total in
             Task { @MainActor in self?.status = "Расшифровка \(Int(current))/\(Int(total)) с" }
         }
+        timing?.transcriptionSeconds = ProcessInfo.processInfo.systemUptime - transcriptionStart
         if result.kind == .meeting && installed.contains("speakers") && result.segments.contains(where: { $0.source == "system" }) {
             status = "Разделяю голоса…"
             let id = result.id
@@ -337,23 +352,33 @@ final class AppModel: ObservableObject {
         let raw = result.kind == .meeting ? result.referencedText : result.rawText
         finalText = TextSafety.minimalCleanup(raw, dictionary: dictionary)
         var needsReview = false
+        var usedFallback = !raw.isEmpty
+        let editingStart = ProcessInfo.processInfo.systemUptime
         if !raw.isEmpty && installed.contains(ModelCatalog.editorPackageID()) {
             let mode: ProcessingMode = result.kind == .meeting ? .summary : (result.editingMode ?? defaultEditingMode)
             status = mode.progressTitle
             do {
                 let edit = try await editor.edit(raw, mode: mode, dictionary: dictionary, style: result.editingStyle ?? editingStyle)
-                result.versions.append(TextVersion(mode: mode, text: edit.text))
-                finalText = TextSafety.deliveryText(original: raw, edited: edit.text, requiresReview: edit.guarded, dictionary: dictionary)
-                if edit.guarded { needsReview = true; result.error = "Редактор мог изменить смысл. Для вставки использована минимальная очистка; предложение редактора сохранено отдельной версией." }
+                result.versions.append(TextVersion(mode: mode, text: edit.text, reviewIssues: edit.issues))
+                finalText = edit.delivery(original: raw, dictionary: dictionary)
+                usedFallback = edit.guarded
+                timing?.reviewIssues = edit.issues
+                if edit.guarded { needsReview = true; result.error = edit.reviewMessage + " Для вставки использована минимальная очистка; предложение редактора сохранено отдельной версией." }
             } catch { result.error = "Расшифровка сохранена. Редактор: \(error.localizedDescription)" }
         }
         try Task.checkCancellation()
-        if needsReview { result.versions.append(TextVersion(mode: .clean, text: finalText, label: "Минимальная очистка")) }
+        timing?.editingSeconds = ProcessInfo.processInfo.systemUptime - editingStart
+        timing?.usedFallback = usedFallback
+        if usedFallback { result.versions.append(TextVersion(mode: .clean, text: finalText, label: "Минимальная очистка")) }
         result.state = "ready"; result.transcribedThrough = nil; result.pendingMode = nil; try store.save(result); refresh(); selection = result.id
+        if let stoppedAt { timing?.stopToReadySeconds = ProcessInfo.processInfo.systemUptime - stoppedAt }
         stableText = finalText; draftText = ""; status = "Готово"
         if insert {
             if !finalText.isEmpty {
-                if await insertion.paste(finalText) {
+                let pasted = await insertion.paste(finalText)
+                timing?.pasteSucceeded = pasted
+                if pasted, let stoppedAt { timing?.stopToPasteSeconds = ProcessInfo.processInfo.systemUptime - stoppedAt }
+                if pasted {
                     status = needsReview ? "Текст вставлен · минимальная очистка" : "Текст вставлен"
                     if needsReview { overlay.showReceipt(model: self) } else { overlay.hide() }
                 } else {
@@ -362,10 +387,14 @@ final class AppModel: ObservableObject {
                 }
             } else { status = "Речь не обнаружена"; overlay.hide() }
         } else if raw.isEmpty { status = "Речь не обнаружена" }
+        if let timing {
+            do { try store.saveDictationMetrics(timing, for: result.id); refresh() }
+            catch { self.error = "Текст сохранён, но замер задержки не записан: " + error.localizedDescription }
+        }
 
     }
     private func persistInterruption(_ id: UUID, error: Error) {
-        guard var saved = (try? store.sessions())?.first(where: { $0.id == id }) else { return }
+        guard var saved = (try? store.session(id)) else { return }
         saved.state = "interrupted"
         saved.error = error is CancellationError ? "Обработка приостановлена. Можно продолжить." : error.localizedDescription
         try? store.save(saved)
@@ -382,7 +411,8 @@ final class AppModel: ObservableObject {
     private func processMeetingDictation(since start: Double) {
         guard let id = active?.id else { return }
         let end = elapsed
-        Task {
+        meetingDictationTask = Task {
+            defer { meetingDictationTask = nil }
             do {
                 await capture.checkpoint()
                 let parts = try AudioFiles.parts(id).filter { $0.source == "microphone" && $0.start < end && $0.start + $0.duration > start }
@@ -391,6 +421,7 @@ final class AppModel: ObservableObject {
                     var offset = max(0, start - part.start)
                     let stop = min(part.duration, end - part.start)
                     while offset < stop {
+                        try Task.checkCancellation()
                         let samples = try AudioFiles.read(AppPaths.audio(id).appendingPathComponent(part.file), from: offset, duration: min(12, stop - offset))
                         if samples.isEmpty { break }
                         fragments.append(try await speech.transcribe(samples))
@@ -398,11 +429,34 @@ final class AppModel: ObservableObject {
                     }
                 }
                 let raw = fragments.joined(separator: " ")
-                let value = installed.contains(ModelCatalog.editorPackageID()) ? try await editor.edit(raw, mode: defaultEditingMode, dictionary: dictionary, style: editingStyle).text : raw
+                var value = TextSafety.minimalCleanup(raw, dictionary: dictionary)
+                var needsReview = false
+                if !raw.isEmpty, installed.contains(ModelCatalog.editorPackageID()) {
+                    do {
+                        let edit = try await editor.edit(raw, mode: defaultEditingMode, dictionary: dictionary, style: editingStyle)
+                        try Task.checkCancellation()
+                        value = edit.delivery(original: raw, dictionary: dictionary)
+                        needsReview = edit.guarded
+                        if edit.guarded {
+                            self.error = edit.reviewMessage + " Для вставки использована минимальная очистка."
+                            if var meeting = active, meeting.id == id {
+                                meeting.versions.append(.init(mode: defaultEditingMode, text: edit.text, label: "Диктовка во время созвона · предложение", reviewIssues: edit.issues))
+                                active = meeting
+                                try store.save(meeting)
+                            }
+                        }
+                    } catch {
+                        if error is CancellationError { throw error }
+                        self.error = "Использована минимальная очистка. Редактор: " + error.localizedDescription
+                    }
+                }
+                try Task.checkCancellation()
+                guard active?.id == id else { return }
                 finalText = value
-                if !(await insertion.paste(value)) { status = "Диктовка готова — скопируйте текст" }
-                else { status = "Созвон продолжается" }
-            } catch { self.error = error.localizedDescription }
+                if value.isEmpty { status = "Речь не обнаружена · созвон продолжается" }
+                else if !(await insertion.paste(value)) { status = "Диктовка готова — скопируйте текст"; overlay.showReceipt(model: self) }
+                else { status = needsReview ? "Текст вставлен · минимальная очистка · созвон продолжается" : "Созвон продолжается" }
+            } catch { if !(error is CancellationError) { self.error = error.localizedDescription } }
         }
     }
     func transform(_ session: RecordingSession, mode: ProcessingMode) {
@@ -412,7 +466,7 @@ final class AppModel: ObservableObject {
             do {
                 let edit = try await editor.edit((mode == .clean || mode == .compose) ? session.rawText : session.referencedText, mode: mode, dictionary: dictionary, style: editingStyle)
                 try Task.checkCancellation()
-                var updated = session; updated.pendingMode = nil; updated.state = "ready"; updated.versions.append(.init(mode: mode, text: edit.text)); updated.error = edit.guarded ? "Проверьте числа и отрицания: редактура сохранена отдельно от исходника." : nil; try store.save(updated)
+                var updated = session; updated.pendingMode = nil; updated.state = "ready"; updated.versions.append(.init(mode: mode, text: edit.text, reviewIssues: edit.issues)); updated.error = edit.guarded ? edit.reviewMessage + " Редактура сохранена отдельно от исходника." : nil; try store.save(updated)
             } catch { persistInterruption(session.id, error: error); if !Task.isCancelled { self.error = error.localizedDescription } }
             processing = false; currentJobID = nil; refresh(); await scheduleUnload(); resumeQueued()
         }
@@ -499,5 +553,16 @@ final class AppModel: ObservableObject {
         modelStatus = "Распознавание: \(asr ? "в памяти" : "выгружено") · Редактор: \(llm ? "в памяти" : "выгружен")"
         let cold = await speech.coldStartSeconds; let inference = await speech.inferenceSeconds; let editCold = await editor.coldStartSeconds
         metrics = String(format: "Память процесса: %.0f МБ · Загрузка ASR: %.2f с · Последнее распознавание: %.2f с · Загрузка редактора: %.2f с", ProcessMetrics.footprintMB, cold, inference, editCold)
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development"
+        let measured = sessions.compactMap(\.dictationMetrics).filter { $0.appVersion == version && $0.editorID == (installed.contains(ModelCatalog.editorPackageID()) ? ModelCatalog.editorPackageID() : nil) }
+        let report = DictationReport(measured)
+        func latency(_ distribution: LatencyDistribution, title: String) -> String {
+            guard let median = distribution.p50, let p95 = distribution.p95 else { return title + ": пока нет замеров" }
+            return String(format: "%@: %d · медиана %.2f с · p95 %.2f с", title, distribution.count, median, p95)
+        }
+        metrics += "\nОт остановки до подтверждения вставки (текущая версия и редактор):\n"
+            + latency(report.stopToPasteWarm, title: "Модели готовы") + "\n"
+            + latency(report.stopToPasteCold, title: "С загрузкой моделей")
+            + "\nНеудачных вставок: \(report.insertionFailures) · Минимальная очистка: \(report.fallbacks)"
     }
 }

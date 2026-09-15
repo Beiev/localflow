@@ -1,0 +1,34 @@
+name: macOS checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test-and-build:
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      LOCALFLOW_DATA_DIR: ${{ runner.temp }}/localflow-test-data
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Prepare build tools
+        run: |
+          brew install xcodegen
+          xcodebuild -downloadComponent MetalToolchain
+          xcodebuild -showComponent MetalToolchain
+      - name: Test without model weights
+        run: Scripts/test.sh
+      - name: Compile app and benchmark tool
+        run: |
+          for scheme in LocalFlow LocalFlowBench; do
+            xcodebuild -project LocalFlow.xcodeproj -scheme "$scheme" -configuration Release -derivedDataPath build.noindex -clonedSourcePackagesDirPath .build -destination 'platform=macOS,arch=arm64' -skipPackagePluginValidation -skipMacroValidation -jobs 6 CODE_SIGNING_ALLOWED=NO build
+          done

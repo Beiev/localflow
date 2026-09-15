@@ -27,7 +27,7 @@ final class EditPlanTests: XCTestCase {
     private func condensingChunks(_ source: String) -> Int {
         TextSafety.chunks(source, maxCharacters: EditPlan.condensingChunkCharacters).count
     }
-    private func run(_ text: String, mode: ProcessingMode, stub: StubResponder) async throws -> (text: String, guarded: Bool, proposals: [String]) {
+    private func run(_ text: String, mode: ProcessingMode, stub: StubResponder) async throws -> EditResult {
         try await EditPlan.run(text: text, mode: mode, dictionary: []) { prompt, instructions in
             try await stub.respond(prompt, instructions)
         }

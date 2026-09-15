@@ -24,7 +24,7 @@ public enum EditPlan {
     /// timestamps in both passes, which is what makes a summary clickable back into the audio.
     private static let citationRule = "\nОБЯЗАТЕЛЬНО: каждый пункт заканчивай отметкой времени [мм:сс], взятой из материала — по ней потом открывают запись. Пункт без отметки считается неполным. Если у факта отметки в материале нет, оставь пункт без неё: выдумывать отметки нельзя."
 
-    public static func run(text: String, mode: ProcessingMode, dictionary: [DictionaryEntry], style: String = "", respond: Respond) async throws -> (text: String, guarded: Bool, proposals: [String]) {
+    public static func run(text: String, mode: ProcessingMode, dictionary: [DictionaryEntry], style: String = "", respond: Respond) async throws -> EditResult {
         let source = TextSafety.applyDictionary(text, entries: dictionary)
         var instruction: String
         switch mode {
@@ -44,7 +44,7 @@ public enum EditPlan {
         let merging = mode.condenses && chunks.count > 1
         let budget = max(Self.condensedFloorCharacters, Int(Double(source.count) * Self.condensedShare))
         let noteBudget = max(Self.noteFloorCharacters, Self.noteBudgetFactor * budget / max(1, chunks.count))
-        var parts: [String] = []; var proposals: [String] = []; var guarded = false
+        var parts: [String] = []; var proposals: [String] = []; var guarded = false; var issues = Set<EditIssue>()
         for (index, chunk) in chunks.enumerated() {
             try Task.checkCancellation()
             var step = instruction
@@ -65,12 +65,19 @@ public enum EditPlan {
             proposals.append(edited)
             let reviewed = TextSafety.reviewEdit(original: chunk, edited: edited, mode: mode)
             parts.append(reviewed.text); guarded = guarded || reviewed.requiresReview
+            if reviewed.requiresReview { issues.formUnion(TextSafety.editIssues(original: chunk, edited: edited)) }
         }
         // Notes are collapsed once more together: each was de-duplicated on its own, but the same
         // line can still arrive from several chunks, and this joined text is both what the merge
         // reads and what the caller falls back to.
         let joined = TextSafety.collapseRepetitions(parts.joined(separator: "\n\n")).text
-        guard merging else { return (joined, guarded, proposals) }
+        // Joining and de-duplication happen after the individual chunk checks. Validate the
+        // actual deliverable as well, so postprocessing cannot silently remove protected facts.
+        if !mode.condenses {
+            issues.formUnion(TextSafety.editIssues(original: source, edited: joined))
+            guarded = guarded || !issues.isEmpty
+        }
+        guard merging else { return EditResult(text: joined, guarded: guarded, proposals: proposals, issues: EditIssue.allCases.filter { issues.contains($0) }) }
         // Second pass. Without it the per-chunk notes were simply concatenated: on a real
         // 29-minute call that produced 19 944 characters out of 21 892 characters of speech,
         // which reads as an edited transcript rather than a summary.
@@ -94,13 +101,13 @@ public enum EditPlan {
             proposals.append(merged)
             // A merge that invents a timestamp is discarded; the notes themselves can only carry
             // timestamps that were in the material.
-            guard !merged.isEmpty, TextSafety.citedTimesExist(in: merged, source: source) else { return (joined, guarded, proposals) }
-            return (merged, guarded, proposals)
+            guard !merged.isEmpty, TextSafety.citedTimesExist(in: merged, source: source) else { return EditResult(text: joined, guarded: guarded, proposals: proposals, issues: EditIssue.allCases.filter { issues.contains($0) }) }
+            return EditResult(text: merged, guarded: guarded, proposals: proposals, issues: EditIssue.allCases.filter { issues.contains($0) })
         } catch {
             // Cancellation must reach the caller. Any other failure of the second pass leaves the
             // user with the notes, never with nothing.
             if error is CancellationError { throw error }
-            return (joined, guarded, proposals)
+            return EditResult(text: joined, guarded: guarded, proposals: proposals, issues: EditIssue.allCases.filter { issues.contains($0) })
         }
     }
     /// One shape for the summary, whether it is produced in a single pass or merged from notes.

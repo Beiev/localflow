@@ -59,6 +59,7 @@ public actor TextEngine {
     private var idleTask: Task<Void, Never>?
     public private(set) var coldStartSeconds: Double = 0
     public init() {}
+    public var isLoaded: Bool { model != nil && loadedID == ModelCatalog.editorPackageID() }
     /// Condensing reads a whole meeting at once, so it needs a cache that holds one. The model
     /// itself is good for 131 072 tokens; 8192 was our own cap, and with a rotating cache it
     /// silently overwrote the beginning of a long transcript.
@@ -90,7 +91,7 @@ public actor TextEngine {
             throw error
         }
     }
-    public func edit(_ text: String, mode: ProcessingMode, dictionary: [DictionaryEntry], style: String = "") async throws -> (text: String, guarded: Bool, proposals: [String]) {
+    public func edit(_ text: String, mode: ProcessingMode, dictionary: [DictionaryEntry], style: String = "") async throws -> EditResult {
         let kvSize = mode.condenses ? Self.condensingKVSize : Self.editingKVSize
         return try await EditPlan.run(text: text, mode: mode, dictionary: dictionary, style: style) { [self] prompt, instructions in
             try await response(prompt, instructions: instructions, kvSize: kvSize)
@@ -106,7 +107,6 @@ public actor TextEngine {
         idleTask = Task { try? await Task.sleep(for: .seconds(seconds)); guard !Task.isCancelled else { return }; await self.unload(onlyIfIdle: true) }
     }
     public func unload(onlyIfIdle: Bool = false) async { await gate.acquire(); if onlyIfIdle && Task.isCancelled { await gate.release(); return }; model = nil; loadedID = nil; try? await Task.sleep(for: .milliseconds(120)); Memory.clearCache(); await gate.release() }
-    public var isLoaded: Bool { model != nil }
 }
 public extension Int { func nonzero(default value: Int) -> Int { self > 0 ? self : value } }
 

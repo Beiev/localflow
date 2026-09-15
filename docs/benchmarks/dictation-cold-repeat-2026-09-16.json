@@ -1,0 +1,24 @@
+{
+  "cold_processing_seconds": {
+    "count": 1,
+    "p50": 4.994632125017233,
+    "p95": 4.994632125017233
+  },
+  "editor": "editor",
+  "runs": [
+    {
+      "asr_seconds": 0.5442306250333786,
+      "audio_seconds": 28.587625000000003,
+      "delivered_characters": 230,
+      "edit_seconds": 4.450401499983855,
+      "guarded": false,
+      "issues": [],
+      "processing_seconds": 4.994632125017233,
+      "warm": false
+    }
+  ],
+  "scope": "audio_replay_without_capture_or_paste",
+  "warm_processing_seconds": {
+    "count": 0
+  }
+}

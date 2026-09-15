@@ -19,30 +19,79 @@ public enum TextSafety {
         if let edited, !requiresReview, !edited.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return edited }
         return minimalCleanup(original, dictionary: dictionary)
     }
-    public static func validateEdit(original: String, edited: String) -> Bool {
-        guard !edited.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return original.isEmpty }
-        func matches(_ pattern: String, _ text: String) -> [String] {
-            let r = try! NSRegularExpression(pattern: pattern, options: .caseInsensitive)
-            return r.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { Range($0.range, in: text).map { String(text[$0]).lowercased() } }
+    /// Conservative, explainable checks; passing them is not proof of semantic equivalence.
+    public static func editIssues(original: String, edited: String) -> [EditIssue] {
+        guard !edited.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? [] : [.empty]
         }
-        // Conservative guard; this is not a proof of semantic equivalence.
-        func numbers(_ text: String) -> [String] {
-            matches("[+-]?\\d+(?:[ \u{00a0}\u{202f}]\\d{3})*(?:[.,]\\d+)?", text).map {
-                $0.replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "\u{00a0}", with: "").replacingOccurrences(of: "\u{202f}", with: "").replacingOccurrences(of: ",", with: ".")
+        var issues: [EditIssue] = []
+        if numbers(original) != numbers(edited) { issues.append(.numbers) }
+        let correction = #"(?<!\p{L})(?:точнее|вернее|поправка|rather|actually)\s*[:,—-]?\s*"# + numberPattern
+        if matches(correction, original).flatMap({ numbers($0) }) != matches(correction, edited).flatMap({ numbers($0) }) { issues.append(.correction) }
+        let before = negations(original), after = negations(edited)
+        if before.count != after.count { issues.append(.negation) }
+        else {
+            // A count alone accepts "don't email; call" -> "email; don't call".
+            // Require both sides of a swap to survive. A changed grammatical construction
+            // ("не имеют брака" -> "нет брака") is not evidence of a moved negation.
+            let functionWords: Set<String> = ["", "из", "в", "на", "к", "у", "о", "по", "с", "от", "для", "in", "at", "on", "to", "of", "from", "for", "with", "a", "an", "the"]
+            let targets = Set(before + after).subtracting(functionWords).filter { target in
+                let token = #"(?<![\p{L}\p{N}])"# + NSRegularExpression.escapedPattern(for: target) + #"(?![\p{L}\p{N}])"#
+                let a = matches(token, original).count, b = matches(token, edited).count
+                return a > 0 && a == b
             }
+            let changes = targets.map { target in after.filter { $0 == target }.count - before.filter { $0 == target }.count }
+            if changes.contains(where: { $0 < 0 }) && changes.contains(where: { $0 > 0 }) { issues.append(.negationScope) }
         }
-        guard numbers(original) == numbers(edited) else { return false }
-        // Keeping the same digits is insufficient when a speaker corrects a value:
-        // "15 files, more precisely 12" must not become "15 files, 12 are ready".
-        let correctedNumber = "(?<!\\p{L})(?:точнее|вернее|поправка|rather|actually)\\s*[:,—-]?\\s*[+-]?\\d+(?:[ \u{00a0}\u{202f}]\\d{3})*(?:[.,]\\d+)?"
-        let originalCorrections = matches(correctedNumber, original).flatMap { numbers($0) }
-        let editedCorrections = matches(correctedNumber, edited).flatMap { numbers($0) }
-        guard originalCorrections == editedCorrections else { return false }
-
-        let negatives = "(?<!\\p{L})(?:не|нет|нельзя|никогда|not|never)(?!\\p{L})"
-        guard matches(negatives, original).count == matches(negatives, edited).count else { return false }
-        if original.count > 100 && edited.count < original.count / 2 { return false }
-        return edited.count <= max(200, original.count * 2)
+        if original.count > 100 && edited.count < original.count / 2 { issues.append(.truncated) }
+        if edited.count > max(200, original.count * 2) { issues.append(.expanded) }
+        return issues
+    }
+    public static func validateEdit(original: String, edited: String) -> Bool {
+        editIssues(original: original, edited: edited).isEmpty
+    }
+    private static func matches(_ pattern: String, _ text: String) -> [String] {
+        let regex = try! NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+        return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap {
+            Range($0.range, in: text).map { String(text[$0]).lowercased() }
+        }
+    }
+    private static let numberPattern = #"[+−-]?\d+(?:[.,]\d+|[ \u00a0\u202f]\d{3}(?!\d))*"#
+    private static func numbers(_ text: String) -> [String] {
+        matches(numberPattern, text).map { value in
+            let compact = value.replacingOccurrences(of: #"[ \u00a0\u202f]"#, with: "", options: .regularExpression)
+                .replacingOccurrences(of: "−", with: "-")
+            let unsigned = compact.trimmingCharacters(in: CharacterSet(charactersIn: "+-"))
+            let sign = compact.hasPrefix("-") ? "-" : ""
+            for (group, decimal) in [(",", "."), (".", ",")] {
+                let g = NSRegularExpression.escapedPattern(for: group)
+                let d = NSRegularExpression.escapedPattern(for: decimal)
+                // Multiple groups or a grouping separator plus an explicit decimal separator.
+                if unsigned.range(of: "^[1-9]\\d{0,2}(?:" + g + "\\d{3}){2,}$", options: .regularExpression) != nil ||
+                    unsigned.range(of: "^[1-9]\\d{0,2}(?:" + g + "\\d{3})+" + d + "\\d+$", options: .regularExpression) != nil {
+                    return sign + unsigned.replacingOccurrences(of: group, with: "").replacingOccurrences(of: decimal, with: ".")
+                }
+            }
+            // A single separator followed by three digits is ambiguous without a language
+            // profile: 1,500 might be 1500 or 1.5. Preserve it instead of guessing the locale.
+            if unsigned.range(of: #"^[1-9]\d*[.,]\d{3}$"#, options: .regularExpression) != nil { return sign + unsigned }
+            if matches(#"[.,]"#, unsigned).count <= 1 { return sign + unsigned.replacingOccurrences(of: ",", with: ".") }
+            return sign + unsigned
+        }
+    }
+    private static func negations(_ text: String) -> [String] {
+        var normalized = text.lowercased().replacingOccurrences(of: "’", with: "'").replacingOccurrences(of: "ʼ", with: "'")
+        normalized = normalized.replacingOccurrences(of: #"\bcannot\b"#, with: "can not", options: .regularExpression)
+            .replacingOccurrences(of: #"\bwon't\b"#, with: "will not", options: .regularExpression)
+            .replacingOccurrences(of: #"\bshan't\b"#, with: "shall not", options: .regularExpression)
+            .replacingOccurrences(of: #"(?<=\p{L})n't\b"#, with: " not", options: .regularExpression)
+        let marker = #"(?<!\p{L})(?:не|нет|нельзя|никогда|ни|без|not|never|no|neither|nor|without|nobody|nothing|nowhere)(?!\p{L})"#
+        let regex = try! NSRegularExpression(pattern: marker)
+        return regex.matches(in: normalized, range: NSRange(normalized.startIndex..., in: normalized)).map { match in
+            let tail = (normalized as NSString).substring(from: NSMaxRange(match.range))
+            // Stop at punctuation; negation cannot acquire a target from the next clause.
+            return matches(#"^\s+[\p{L}\p{N}]+"#, tail).first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        }
     }
     /// Keep the edited proposal visible; suspicious changes require review instead of a silent rollback.
     public static func reviewEdit(original: String, edited: String, mode: ProcessingMode) -> (text: String, requiresReview: Bool) {

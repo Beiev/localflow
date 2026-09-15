@@ -10,6 +10,12 @@ struct Bench {
             try AppPaths.create()
             let args = Array(CommandLine.arguments.dropFirst())
             switch args.first {
+            case "diagnostics":
+                try diagnostics(output: args.count > 1 ? args[1] : nil)
+            case "latency":
+                guard args.count >= 2 else { throw LocalFlowError.message("latency AUDIO [RUNS=3] [OUTPUT.json]") }
+                guard let runs = args.count > 2 ? Int(args[2]) : 3 else { throw LocalFlowError.message("RUNS must be an integer") }
+                try await latency(audio: args[1], runs: runs, output: args.count > 3 ? args[3] : nil)
             case "install":
                 for id in args.dropFirst() {
                     guard let model = ModelCatalog.packages.first(where: { $0.id == id }) else { throw LocalFlowError.message("Unknown model: \(id)") }
@@ -77,7 +83,7 @@ struct Bench {
                 // without writing anything back: the "after" for a run that was already recorded.
                 guard args.count >= 2 else { throw LocalFlowError.message("summarize SESSION_PREFIX [OUTPUT.json]") }
                 let wanted = args[1].lowercased()
-                let store = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"))
+                let store = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"), readOnly: true)
                 guard let session = try store.sessions().first(where: { $0.id.uuidString.lowercased().hasPrefix(wanted) }) else {
                     throw LocalFlowError.message("No session starts with \(args[1])")
                 }
@@ -122,7 +128,7 @@ struct Bench {
                 // identity map, without writing anything back.
                 guard args.count >= 2 else { throw LocalFlowError.message("diarize SESSION_PREFIX [OUTPUT.json]") }
                 let target = args[1].lowercased()
-                let archive = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"))
+                let archive = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"), readOnly: true)
                 guard let stored = try archive.sessions().first(where: { $0.id.uuidString.lowercased().hasPrefix(target) }) else {
                     throw LocalFlowError.message("No session starts with \(args[1])")
                 }
@@ -214,7 +220,7 @@ struct Bench {
                 let preserved = try await engine.annotate(manual, audio: URL(fileURLWithPath: args[2]), profiles: profiles)
                 guard preserved.speakers["S1"] == "Ручное имя" else { throw LocalFlowError.message("Manual speaker name overwritten") }
                 print("reorder_verified=true manual_name_preserved=true")
-            case "diarize":
+            case "diarize-file":
                 guard args.count > 1 else { return }
                 ModelHub.offlineMode = true
                 let start = Date()
@@ -228,7 +234,7 @@ struct Bench {
                 let json = try JSONSerialization.data(withJSONObject: spans, options: [.sortedKeys])
                 print("spans=" + String(decoding: json, as: UTF8.self))
                 print("speakers=\(result.speakerDatabase?.count ?? 0) elapsed_s=\(Date().timeIntervalSince(start)) footprint_mb=\(ProcessMetrics.footprintMB)")
-            default: print("LocalFlowBench install [asr8 editor editor-qwen speakers] | transcribe FILE | edit TEXT | diarize FILE")
+            default: print("LocalFlowBench install [asr8 editor editor-qwen speakers] | transcribe FILE | edit TEXT | diagnostics [OUTPUT.json] | latency AUDIO [RUNS] [OUTPUT.json] | diarize SESSION_PREFIX [OUTPUT.json] | diarize-file AUDIO [SPEAKERS] [THRESHOLD]")
             }
         } catch { FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8)); exit(1) }
     }
