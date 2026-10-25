@@ -39,7 +39,7 @@ struct DiaryView: View {
                                 Button("Редактировать текст") { text = content; editing = true }
                                 Button("Экспорт") { model.export(current, text: content) }
                                 Menu("Обработать заново") {
-                                    ForEach(ProcessingMode.allCases, id: \.self) { mode in
+                                    ForEach(ProcessingMode.available(for: current.kind), id: \.self) { mode in
                                         Button(mode.title) { model.transform(current, mode: mode) }
                                     }
                                 }
@@ -64,7 +64,8 @@ struct DiaryView: View {
                         }
                     }
                 } else if !content.isEmpty {
-                    Text(content).font(.system(size: 16)).lineSpacing(7).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                    FormattedText(markdown: content) { seconds in model.playMoment(current, at: seconds) }
+                        .font(.system(size: 16)).frame(maxWidth: .infinity, alignment: .leading)
                 } else if !busy {
                     Text("Заметка уже сохранена. Начните диктовку, когда будете готовы.")
                         .foregroundStyle(.secondary).padding(.top, 32)

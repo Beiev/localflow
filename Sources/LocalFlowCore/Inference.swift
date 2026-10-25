@@ -27,6 +27,8 @@ public actor SpeechEngine: SpeechRecognizing {
         await gate.acquire()
         do {
             try Task.checkCancellation()
+            // Do not turn digital silence into a hallucinated transcript.
+            guard samples.count >= 1600, samples.reduce(Float(0), { $0 + $1*$1 }) / Float(samples.count) > 0.000002 else { await gate.release(); return SpeechRecognition(text: "", words: []) }
             guard ModelCatalog.package("asr8").installed else { throw LocalFlowError.message("Сначала загрузите модель распознавания в настройках") }
             if manager == nil {
                 let start = Date()
@@ -34,8 +36,6 @@ public actor SpeechEngine: SpeechRecognizing {
                 manager = AsrManager(models: models)
                 coldStartSeconds = Date().timeIntervalSince(start)
             }
-            // Do not turn digital silence into a hallucinated transcript.
-            guard samples.count >= 1600, samples.reduce(Float(0), { $0 + $1*$1 }) / Float(samples.count) > 0.000002 else { await gate.release(); return SpeechRecognition(text: "", words: []) }
             let start = Date()
             var state = try TdtDecoderState()
             let result = try await manager!.transcribe(samples, decoderState: &state)
@@ -123,12 +123,16 @@ public actor SpeakerEngine {
         var updated = session
         let database = result.speakerDatabase ?? [:]
         let representative = TextSafety.mergeIdentities(database)
-        // Only surviving voices stay nameable in the interface.
-        updated.embeddings = database.filter { representative[$0.key] == $0.key }
-        let spans = result.segments.map { span in
+        // Two passes over the diarizer's identities: the same voice split by similarity, then the
+        // leftover fragments too small to be anybody, which similarity cannot catch because a
+        // few seconds of speech do not make a comparable embedding.
+        let spans = TextSafety.foldMinorIdentities(result.segments.map { span in
             SpeakerSpan(start: Double(span.startTimeSeconds), end: Double(span.endTimeSeconds),
                         speaker: representative[span.speakerId] ?? span.speakerId)
-        }
+        })
+        // Only surviving voices stay nameable in the interface.
+        let surviving = Set(spans.map(\.speaker))
+        updated.embeddings = database.filter { representative[$0.key] == $0.key && surviving.contains($0.key) }
         for index in updated.segments.indices where updated.segments[index].source == "system" {
             let segment = updated.segments[index]
             updated.segments[index].speaker = TextSafety.speaker(from: segment.start, to: segment.end, in: spans)

@@ -186,6 +186,77 @@ struct Bench {
                 await engine.scheduleUnload(after: 1)
                 try await Task.sleep(for: .seconds(2))
                 print("auto_unloaded=\(!(await engine.isLoaded)) after_unload_mb=\(ProcessMetrics.footprintMB)")
+            case "identities":
+                // What folding small diarizer identities does to every meeting already in the
+                // archive, from the stored turns and without touching anything. Numbers only.
+                let archive = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"), readOnly: true)
+                let meetings = try archive.sessions().filter { $0.kind == .meeting }
+                print("session  minutes  remote_s  before  after  folded_s  shares_after")
+                var changed = 0
+                for meeting in meetings {
+                    let remote = meeting.segments.filter { $0.source == "system" && $0.speaker != nil }
+                    guard !remote.isEmpty else { continue }
+                    let spans = remote.map { SpeakerSpan(start: $0.start, end: $0.end, speaker: $0.speaker ?? "") }
+                    let folded = TextSafety.foldMinorIdentities(spans)
+                    let before = Set(spans.map(\.speaker)).count
+                    let after = Set(folded.map(\.speaker)).count
+                    let total = TextSafety.speechTime(spans).values.reduce(0, +)
+                    let movedSeconds = TextSafety.minorIdentities(spans)
+                        .reduce(0.0) { $0 + (TextSafety.speechTime(spans)[$1] ?? 0) }
+                    let shares = TextSafety.speechTime(folded).sorted { $0.value > $1.value }
+                        .map { String(format: "%.0f%%", $0.value / max(1, total) * 100) }.joined(separator: "/")
+                    if before != after { changed += 1 }
+                    print(String(format: "%@  %7.1f  %8.0f  %6d  %5d  %8.0f  %@",
+                                 meeting.id.uuidString.prefix(8).description, meeting.duration / 60,
+                                 total, before, after, movedSeconds, shares))
+                }
+                print("meetings=\(meetings.count) with_identities_changed=\(changed)")
+            case "names":
+                // Which names the recordings themselves offer, after folding small identities.
+                // Text goes to stdout only; nothing is written back and nothing is committed.
+                let archive = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"), readOnly: true)
+                for meeting in try archive.sessions().filter({ $0.kind == .meeting }) {
+                    let folded = meeting.foldingMinorIdentities()
+                    let voices = Set(folded.segments.compactMap { $0.source == "system" ? $0.speaker : nil })
+                    guard !voices.isEmpty else { continue }
+                    let proposals = SpeakerNaming.proposals(for: folded)
+                    let summary = proposals.isEmpty ? "—" : proposals.map {
+                        "\($0.id)=\($0.name)(\($0.mentions), \($0.reason.rawValue), \($0.evidence.timestamp))"
+                    }.joined(separator: "  ")
+                    print(String(format: "%@  %5.1fm  voices=%d  %@",
+                                 meeting.id.uuidString.prefix(8).description, meeting.duration / 60, voices.count, summary))
+                }
+            case "transcript":
+                // Runs the line-by-line cleanup over an archive entry with the real editor model
+                // and reports what the turn guard accepted, without writing anything back.
+                guard args.count >= 2 else { throw LocalFlowError.message("transcript SESSION_PREFIX [OUTPUT.json]") }
+                let wanted = args[1].lowercased()
+                let archive = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"), readOnly: true)
+                guard let stored = try archive.sessions().first(where: { $0.id.uuidString.lowercased().hasPrefix(wanted) }) else {
+                    throw LocalFlowError.message("No session starts with \(args[1])")
+                }
+                let source = stored.foldingMinorIdentities().referencedText
+                let windows = TextSafety.lineChunks(source, maxCharacters: EditPlan.transcriptChunkCharacters).count
+                print("turns=\(TextSafety.turnPrefixes(source).count) characters=\(source.count) windows=\(windows)")
+                let engine = TextEngine(); let start = Date()
+                let cleaned = try await engine.edit(source, mode: .transcript, dictionary: [])
+                let elapsed = Date().timeIntervalSince(start)
+                let kept = zip(TextSafety.lineChunks(source, maxCharacters: EditPlan.transcriptChunkCharacters),
+                               TextSafety.lineChunks(cleaned.text, maxCharacters: EditPlan.transcriptChunkCharacters))
+                    .filter { $0.0 != $0.1 }.count
+                print("elapsed_s=\(String(format: "%.1f", elapsed)) characters_out=\(cleaned.text.count) turns_out=\(TextSafety.turnPrefixes(cleaned.text).count)")
+                print("turns_preserved=\(TextSafety.turnPrefixes(source) == TextSafety.turnPrefixes(cleaned.text)) guarded=\(cleaned.guarded) issues=\(cleaned.issues.map(\.rawValue)) windows_changed=\(kept) footprint_mb=\(ProcessMetrics.footprintMB)")
+                if args.count > 2 {
+                    // Numbers to the file, speech to stdout: the archive is real business speech.
+                    let row: [String: Any] = ["turns": TextSafety.turnPrefixes(source).count, "characters": source.count,
+                                              "windows": windows, "elapsed_s": elapsed, "characters_out": cleaned.text.count,
+                                              "turns_preserved": TextSafety.turnPrefixes(source) == TextSafety.turnPrefixes(cleaned.text),
+                                              "guarded": cleaned.guarded, "issues": cleaned.issues.map(\.rawValue)]
+                    try JSONSerialization.data(withJSONObject: row, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: args[2]), options: .atomic)
+                }
+                print("----- cleaned transcript (stdout only) -----")
+                print(cleaned.text)
+                await engine.unload()
             case "storage":
                 // Accelerated two-hour PCM stress test. This does not simulate a real call.
                 let id = UUID(); let root = AppPaths.audio(id)

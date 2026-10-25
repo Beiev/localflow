@@ -1,7 +1,7 @@
 import Foundation
 
 public enum EditIssue: String, Codable, CaseIterable, Sendable {
-    case empty, numbers, correction, negation, negationScope, truncated, expanded
+    case empty, numbers, correction, negation, negationScope, truncated, expanded, structure
     public var title: String {
         switch self {
         case .empty: "пустой результат"
@@ -11,6 +11,7 @@ public enum EditIssue: String, Codable, CaseIterable, Sendable {
         case .negationScope: "отрицание перенесено к другому слову"
         case .truncated: "потеряна большая часть текста"
         case .expanded: "добавлено слишком много текста"
+        case .structure: "строки расшифровки не совпали с исходником"
         }
     }
 }

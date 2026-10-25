@@ -65,6 +65,9 @@ targets:
     sources:
       - Tests/LocalFlowInterfaceTests
       - Sources/LocalFlow/LiveTranscriptView.swift
+      - Sources/LocalFlow/NotchGeometry.swift
+      - Sources/LocalFlow/NotchMotion.swift
+      - Sources/LocalFlow/NotchSurface.swift
     settings:
       base:
         SWIFT_VERSION: '5.0'

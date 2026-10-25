@@ -287,3 +287,118 @@ Qwen: короткая диктовка с повторами, бюджетом 
 После переноса `mdfind` возвращает только установленную копию, в реестре Launch Services остаётся одна запись LocalFlow; в интерфейсе Raycast также найдено одно приложение. Синтаксис скриптов и отказ установки поверх запущенного процесса проверены.
 
 Повторная Release-сборка в новом каталоге завершилась успешно; после неё системный поиск по-прежнему возвращает одно приложение.
+
+
+## 2026-09-18 — Capture recovery and compact notch panel (0.3.4 / 13)
+
+- Incident inspection: five consecutive failed dictations had empty `parts.json` journals and no CAF files. CoreAudio logs showed the old AVAudioEngine initializing a Bluetooth route and subsequently rebinding its audio unit to the USB microphone. No PCM reached storage; ASR had no input. The route/graph interaction is the likely trigger; the absent first-buffer health check is confirmed.
+- Replaced only microphone acquisition with an explicitly selected AVCaptureSession audio input. ScreenCaptureKit, file format, transcript processing and text insertion remain on their existing paths. Startup readiness now requires converted PCM, and a 2.5-second delivery watchdog allows two reconnect attempts, using built-in input on the second attempt. Silence/paused capture still advances delivery health. Runtime errors use the same bounded recovery path.
+- Capture lifecycle and file state are serialized; callbacks carry recording IDs. Startup can be stopped or cancelled. Failed capture preserves its diagnostic alongside recoverable audio rather than silently presenting an empty result.
+- Validation: `Scripts/test.sh` passed 80 core + 2 interface tests. New checks cover missing initial buffers, bounded retries, silence/pause delivery, readiness after recovery, and physical-top positioning without focus stealing. `Scripts/build.sh` produced the signed Release build; installed at `~/Applications/LocalFlow.app` with the existing local signing identity.
+- Hardware smoke checks used an isolated temporary archive and existing models on the same Mac with AirPods as system input/output and Shure MV7+ selected for capture. Two recordings produced nonempty audio, live transcripts and ready edited results without capture errors. The second used an explicitly generated Russian test phrase played through built-in speakers; first PCM arrived about 0.20 seconds after starting the Shure session. The application reported insertion dispatch success, but insertion into the automation-controlled TextEdit window was not observed; do not treat that as independently verified insertion. Physical left-Command shortcuts and Esc could not be exercised by app-targeted automation (it bypasses the global event tap); the unchanged shortcut matcher has unit coverage.
+- Visual inspection and owner feedback: reduced panel to 380 pt wide and 148 pt body height, transparent shoulders around the notch, 2 pt neck/body overlap, slower damped reveal. A borderless NSPanel subclass bypasses AppKit menu-bar frame clamping, which caused the visible gap and redundant top padding.
+- Remaining validation limits: no physical microphone unplug/replug, long meeting capture or sleep/wake endurance run in this session. Recovery policy is unit-tested; these hardware scenarios are not claimed as tested. Existing failed recordings with no audio cannot be reconstructed.
+
+
+## 2026-09-18 — Interruptible notch animation (0.3.5 / 14)
+
+- Confirmed the reported out/in/out sequence in code: the no-speech result called `showReceipt`, reopening the dismissed panel for eight seconds. Removed automatic presentation from all processing outcomes (including errors and failed insertion). Those outcomes remain in the main window/menu/archive. Only explicit recording/show commands can open the panel.
+- Replaced the changing SwiftUI frame and rectangular clipping with a fixed native surface. Matching Core Animation paths animate the black contour and the content mask; transcript layout stays fixed. Six curved path sections keep rounded edges throughout the reveal, with Retina mask scaling. An analytical critically damped curve carries position and velocity through reversals; show/hide commands are idempotent and closing completions are revision-checked.
+- Rapid startup toggles update the requested final visibility. Digital silence and less than 100 ms of samples return before loading the recognizer. Audio-meter UI publication is bounded to 30 Hz.
+- `Scripts/test.sh`: 81 core + 7 interface tests passed. The interface suite was repeated after final rendering changes and passed. Regressions cover no model load for silence/short taps, continuous position/velocity across four quick reversals, stable curved path topology at eight intermediate sizes, duplicate close commands, and obsolete closing completions. The native-window test also checks the compositor presentation path after 80 ms: its bounds are between the closed and open sizes, verifying actual intermediate rendering rather than only the math.
+- Reviewed an offscreen contour contact sheet at 2/6/12/25/40/65/85/100 percent reveal. Installed-build smoke check used a temporary archive: microphone capture, live transcription, completion and dismissal worked, and processing did not reopen the panel. The physical global shortcut sequence still needs owner testing; app-targeted automation bypasses the global event tap. No claim of measured frame-rate performance is made.
+
+## 2026-09-18 — Reduce work during the entrance (0.3.6 / 15)
+
+- Owner feedback confirmed smooth dismissal but stuttering entrance. Code inspection found cold hosting/TextKit creation on first show, recognizer startup and full archive refresh overlapping the reveal, and waveform publication on the shared AppModel invalidating unrelated interface observers up to 30 times per second. These are identified sources of contention, not a measured allocation of dropped frames between them.
+- Prepare the hidden panel after application initialization; finish content layout/display before starting its animation clock; explicitly flush the animation transaction before audio startup. Opacity now animates an AppKit-owned container rather than NSHostingView's own layer. The existing motion curve and geometry are unchanged.
+- Audio capture and buffering start immediately. Recognition, the startup archive refresh and meter/clock publication wait for the opening to finish (0.72 s normally, 0.12 s with Reduce Motion). Waiting is cancellation-aware and follows a later opening after reversal. Waveform ticks now publish through a separate observable object, so they update only waveform views.
+- `Scripts/test.sh` passed 81 core + 10 interface tests. The 10 interface tests passed again after the final behavior change. Added checks cover hidden preparation without presentation/rebuilding, deferred work across reopening/cancellation, and intermediate compositor path bounds after an 80 ms synchronous main-thread stall immediately after show. This does not measure physical display frame pacing or prove a specific FPS.
+- Signed Release build installed as 0.3.6 / 15. Two microphone recordings in a separate temporary archive reached `ready`, retained audio and live/final text, and had no recording errors. A synthetic Russian phrase was recognized in the first recording. The first saved PCM started at 0.803 s on the cold attempt and 0.147 s on the next attempt, relative to capture's epoch; the latter is before the 0.72 s entrance completes. Capture logs confirmed PCM 185/144 ms after selecting/starting the Shure input. No artificial microphone-start delay was added. Restored the normal application/archive after testing. Physical shortcut and on-screen smoothness still require owner assessment; the native transition lifecycle has automated coverage.
+
+## 2026-09-18 — Entrance clock and microphone sequencing (0.3.7 / 16)
+
+- Owner feedback established that 0.3.6 still stuttered on entrance. Profiled the installed build against an isolated snapshot of the real archive. The first trace was contaminated by accessibility-tree inspection; its largest stall is not attributed to normal usage. A second trace avoided accessibility reads during opening. Samples inside `NotchSurface.setExpanded` spanned roughly 187 ms, including SwiftUI layout of other windows through `NSDisplayCycleFlush` / Core Animation commit handlers, after the animation's explicit start time had already been set. Sampling a presentation path with a lightweight text-only test did not catch this startup cost.
+- Flush pending layout/commit work before creating the timed animation. A new regression introduces 240 ms of pending layout in another native window. Without the fix it fails: 80 ms after show returns, the contour is already 172.6 pt tall. With the fix it stays below 125 pt at that point; preparation takes 250.6 ms before the clock, and the timed commit takes 1.5 ms. The regression was run against both versions, restoring the fix automatically afterward.
+- Disable automatic AppKit `orderFront`/`orderOut` animations and request the display's maximum frame rate for Core Animation (a 120 Hz array of samples alone does not request 120 Hz presentation). This is a refresh-rate preference, not a claim of measured constant 120 FPS.
+- Microphone initialization now waits for the entrance, including its preparation. The panel says to speak after “Слушаю…”. A second press during the entrance returns to idle without saving an empty session or starting audio/ASR; Escape cancels the wait. Recording duration excludes this initial wait. The existing close motion, geometry and insertion code are unchanged.
+- Validation: 81 core tests passed, then all 12 interface tests passed after the final change (93 total). New coverage includes denying recording startup after an entrance is dismissed. Signed Release installed as 0.3.7 / 16. In the installed build, two openings logged 41.5/61.6 ms of preparation before the animation clock and 0.318/0.417 ms for the timed commit; microphone requests followed about 0.77 s later. Audio, live transcription and final processing reached `ready` without errors. The UI automation round-trip was too slow to dismiss within 0.72 s; that attempt instead verified a short 0.31 s recording. Sub-entrance dismissal is covered by the native regression, not claimed as a physical shortcut test. The normal archive is restored after isolated validation. Subjective smoothness on the physical display still needs owner feedback.
+
+## 2026-09-21 — Recording panel while the archive is hidden (0.3.8 / 17)
+
+- Reproduced a native visibility failure against the previous controller: hiding the application also hides its recording panel (`canHide` defaults to true), while the logical visibility flag stays true. Another show request then returns without restoring the window. A separate regression reproduced the same stale-state problem after an external `orderOut`.
+- The independent, nonactivating panel now opts out of application hiding and can join other applications' window sets. Every show request restores the native window and checks its current screen frame; a healthy visible panel keeps its current animation. The opening waiter requires actual native visibility before authorizing microphone startup. Removed the redundant “Показать окно” control; the existing shortcut opens recording and the next press closes it.
+- All 16 interface tests passed, including four added checks: hidden-app presentation across repeated openings without unhiding the archive or taking keyboard focus, hiding an already recording app, externally ordered-out window recovery, and drawing-layer attachment across repeated presentations. The two visibility regressions failed against the old controller. Existing interruption, rounded-path and entrance timing checks remain green. Core capture/inference code was unchanged in this revision; its 81 tests last passed for 0.3.7 (97 tests now in the repository).
+- Signed Release 0.3.8 / 17 built successfully. Physical shortcut delivery, full-screen app switching and sleep/wake are not established by these native-window tests. Presentation diagnostics now log only window visibility, Space membership, application-hidden state and frame, without speech content.
+
+## 2026-10-25 — Reading the record, and names for the voices (0.3.9 / 18)
+
+Owner's framing: a summary without the transcript beside it is "the agent's idea of the call", and
+the existing summaries are "crooked, a three out of five on presentation". Both complaints were
+reproduced before anything was changed.
+
+- **Presentation was literal markup.** The interface showed condensed documents with
+  `Text(String)`, which prints Markdown rather than interpreting it. All eleven summaries in the
+  archive are written with `**Заголовок**` sections and `*   ` bullets, so all eleven were being
+  read with their asterisks. `RichText` now parses blocks (headings, bullets, quotes, tables,
+  dividers) and the view hands inline runs to `AttributedString`. A standalone fully-bold line is
+  treated as a heading, which is what makes the eleven documents already in the archive render.
+- **Citations were dead text.** `[мм:сс]` was clickable only in the raw turn list, never in the
+  summary that cites it. They are now rewritten as Markdown links on a private scheme and
+  intercepted, so a claim opens the audio that supports it. Minutes are not capped at 59: an
+  88-minute call writes `[87:36]`, and the earlier assumption would have dropped those.
+- **The transcript had nowhere to be read.** `SessionView` auto-selected the newest version on
+  every open and offered the original only through an unlabelled picker, so after condensing there
+  was no obvious way back to the speech. Replaced with three tabs: summary, cleaned transcript,
+  raw recognition, each copyable on its own.
+- **Cleaned transcript, measured on real calls with the real editor.** New `transcript` mode and a
+  `LocalFlowBench transcript` mode that runs it over an archive entry without writing back.
+  12-minute call: 46 turns, 10 154 characters, 5 windows of 2 500 characters, **79.6 s** on
+  Gemma 4 E2B, process footprint 2 854 MB. Every turn survived, the turn guard did not fire, and
+  24 of 46 lines changed — capitalization after sentence ends, dash and comma repair, fillers
+  removed — while numbers and negations passed the existing guards unchanged.
+  45-minute call: 172 turns, 37 649 characters, 17 windows, **314.2 s** (5 min 14 s), footprint
+  2 771 MB. All 172 turns survived; output 37 615 characters. Here the guard did fire: at least one
+  window came back with a different negation count and was delivered as recognized instead of
+  accepted, which is the intended trade — a stretch loses its polish rather than quietly losing a
+  "не". So the cost of this mode is roughly seven seconds of local compute per minute of call, in
+  the background, on demand.
+- **Identity folding, measured across every meeting in the archive.** The 45-minute two-person call
+  came back as three remote identities holding 97 %, 1 % and 0 % of the remote speech; the 1 % and
+  0 % pieces were the same voice, and their embeddings sat at cos 0,17 and 0,01 from the dominant
+  one, so no similarity threshold could have merged them — the fragments are too short to make a
+  comparable embedding. Folding identities under both 5 % of remote speech and 60 s of it, into the
+  surviving voice nearest in time, changed 8 of 11 meetings: 3→1, 3→1, 2→1, 3→2, 3→2, 4→3, 4→3,
+  9→8. The 9→8 case kept a genuinely quiet participant of a 92-minute nine-person call (3 % share
+  but 122 s of speech), which is why both floors are required. Two meetings were left alone where
+  a small identity held ≥ 5 % (10 % and 5,5 %); the rule is deliberately conservative there.
+  `LocalFlowBench identities` reports this from stored turns, and the same fold is offered as an
+  action for recordings whose audio has already been pruned.
+- **Names from the conversation, measured the same way.** A name used as a vocative is aimed at
+  somebody else, so in a two-sided call each side names the other. `LocalFlowBench names` over the
+  archive proposed, after folding: the correct two names on the 45-minute call (4 mentions / 3
+  mentions), the correct two on a 54-minute call, one name on a 13-minute call from a single
+  uncontested mention, and nothing on the remaining eight. No third party was ever proposed as a
+  participant, including two clients discussed by name on the 45-minute call — they are named by
+  one side only and lose on count. First attempt had `.caseInsensitive` on a pattern asserting an
+  initial capital, which made every word after a comma a candidate; second attempt counted
+  unattributable turns as a third voice and so proposed nothing at all on two-person calls. Both
+  are now regressions.
+- **Archive search re-queried SQLite on every redraw.** `filteredSessions` ran
+  `store.search(...)` inside a computed property, so a waveform tick during recording re-ran
+  full-text search. Now debounced by 220 ms into state.
+- **Validation:** `Scripts/test.sh` — 116 core + 16 interface tests pass (81 + 16 before this
+  work). New coverage: block parsing of the archive's actual summary shape, tables with ragged
+  rows, prose that only looks like a table, time references beyond an hour and malformed ones such
+  as `[134]`, line-preserving chunking, the turn guard against summarized / reordered / renamed /
+  empty replies, identity folding including the quiet-participant and all-minor cases, and the
+  naming rules including the two failures above.
+- **Not verified in this session, and not claimed:** the interface was not seen running. Screen
+  access was declined, so every interface change above is verified by compilation, unit tests and
+  code reading only — not by eye. The signed Release build was produced but **not installed**: the
+  owner's LocalFlow was running and installing requires quitting it. The installed build is still
+  the one from 18 September, which also means the committed-but-undelivered work from 0.3.4–0.3.8
+  has not reached the live machine either. A cleaned transcript was not produced through the
+  application's own interface, only through the bench harness on the same code path. Which windows
+  the negation guard rejected on the 45-minute call was not inspected turn by turn; only that it
+  fired and that no turn went missing.

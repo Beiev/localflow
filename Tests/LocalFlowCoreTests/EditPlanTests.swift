@@ -159,3 +159,98 @@ final class EditPlanTests: XCTestCase {
         XCTAssertFalse(TextSafety.citedTimesExist(in: "Факт [07:41].", source: "[01:20] Я: факт."))
     }
 }
+
+/// The cleaned-transcript path: the same conversation, readable, with every turn still there.
+final class TranscriptCleanupTests: XCTestCase {
+    private func transcript(turns: Int) -> String {
+        var lines: [String] = []
+        for index in 0..<turns {
+            let stamp: String = String(format: "[%02d:%02d] Я: ", index / 4, (index % 4) * 15)
+            let words: String = String(repeating: "слово ", count: 20)
+            lines.append(stamp + "ээ ну " + words + "и 15 файлов, не 12")
+        }
+        return lines.joined(separator: "\n")
+    }
+    private func run(_ text: String, stub: StubResponder) async throws -> EditResult {
+        try await EditPlan.run(text: text, mode: .transcript, dictionary: []) { prompt, instructions in
+            try await stub.respond(prompt, instructions)
+        }
+    }
+    private func body(of prompt: String) -> String {
+        prompt.replacingOccurrences(of: "<расшифровка>\n", with: "").replacingOccurrences(of: "\n</расшифровка>", with: "")
+    }
+
+    /// A faithful cleanup is delivered whole, in order, and is never asked to condense.
+    func testCleanupIsDeliveredAndEveryTurnSurvives() async throws {
+        let source = transcript(turns: 40)
+        let stub = StubResponder { _, prompt, _ in
+            let lines = prompt.components(separatedBy: .newlines).filter { $0.hasPrefix("[") }
+            return lines.map { $0.replacingOccurrences(of: "ээ ну ", with: "") }.joined(separator: "\n")
+        }
+        let result = try await run(source, stub: stub)
+        XCTAssertFalse(result.guarded)
+        XCTAssertEqual(TextSafety.turnPrefixes(result.text), TextSafety.turnPrefixes(source))
+        XCTAssertFalse(result.text.contains("ээ ну"))
+        let calls = await stub.calls
+        XCTAssertGreaterThan(calls, 1, "40 turns are more than one window")
+        for instruction in await stub.instructions {
+            XCTAssertTrue(instruction.contains("столько же строк"))
+            XCTAssertFalse(instruction.contains("Уложись в"), "a transcript is not condensed")
+        }
+    }
+    /// A window the model summarized instead of cleaning is replaced by what was recognized, and
+    /// only that window: the rest of the transcript keeps its polish.
+    func testASummarizedWindowFallsBackWithoutLosingTheOthers() async throws {
+        let source = transcript(turns: 40)
+        let stub = StubResponder { index, prompt, _ in
+            if index == 1 { return "[00:00] Я: Обсудили файлы." }
+            let lines = prompt.components(separatedBy: .newlines).filter { $0.hasPrefix("[") }
+            return lines.map { $0.replacingOccurrences(of: "ээ ну ", with: "") }.joined(separator: "\n")
+        }
+        let result = try await run(source, stub: stub)
+        XCTAssertTrue(result.guarded)
+        XCTAssertEqual(result.issues, [.structure])
+        XCTAssertEqual(TextSafety.turnPrefixes(result.text), TextSafety.turnPrefixes(source), "no turn may go missing")
+        XCTAssertTrue(result.text.contains("ээ ну"), "the rejected window is back as recognized")
+        XCTAssertFalse(result.text.contains("Обсудили файлы"))
+    }
+    /// A window that silently changed a number is rejected by the same guards as a dictation.
+    func testAChangedNumberRejectsThatWindow() async throws {
+        let source = transcript(turns: 8)
+        let stub = StubResponder { _, prompt, _ in
+            let lines = prompt.components(separatedBy: .newlines).filter { $0.hasPrefix("[") }
+            return lines.map { $0.replacingOccurrences(of: "не 12", with: "не 21") }.joined(separator: "\n")
+        }
+        let result = try await run(source, stub: stub)
+        XCTAssertTrue(result.guarded)
+        XCTAssertTrue(result.issues.contains(.numbers))
+        XCTAssertEqual(result.text, source, "nothing was trustworthy, so nothing was changed")
+    }
+    /// The model is shown whole turns: a window that cut one in half would make the guard fire on
+    /// material that was never broken.
+    func testEveryWindowContainsWholeTurns() async throws {
+        let source = transcript(turns: 60)
+        let stub = StubResponder { _, prompt, _ in
+            prompt.components(separatedBy: .newlines).filter { $0.hasPrefix("[") }.joined(separator: "\n")
+        }
+        _ = try await run(source, stub: stub)
+        for prompt in await stub.prompts {
+            for line in body(of: prompt).components(separatedBy: .newlines) where !line.isEmpty {
+                XCTAssertTrue(line.hasPrefix("["), "turn cut in half: \(line.prefix(40))")
+                XCTAssertTrue(line.hasSuffix("не 12"), "turn cut in half: …\(line.suffix(40))")
+            }
+        }
+    }
+    /// An empty reply is not a cleanup.
+    func testAnEmptyReplyKeepsTheRecognition() async throws {
+        let source = transcript(turns: 4)
+        let result = try await run(source, stub: StubResponder { _, _, _ in "" })
+        XCTAssertTrue(result.guarded)
+        XCTAssertEqual(result.text, source)
+    }
+    func testCancellationReachesTheCaller() async throws {
+        let stub = StubResponder { _, _, _ in throw CancellationError() }
+        do { _ = try await run(transcript(turns: 4), stub: stub); XCTFail("expected cancellation") }
+        catch { XCTAssertTrue(error is CancellationError) }
+    }
+}

@@ -111,6 +111,40 @@ public enum TextSafety {
         if !current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { chunks.append(current) }
         return chunks
     }
+    /// Chunks that never split a line. A speaker-labelled transcript loses its meaning the
+    /// moment a turn is cut in half, so the word-level chunker cannot be used on one.
+    public static func lineChunks(_ text: String, maxCharacters: Int = 6000) -> [String] {
+        var chunks: [String] = []; var current: [String] = []; var length = 0
+        for line in text.components(separatedBy: .newlines) {
+            if length + line.count + 1 > maxCharacters && !current.isEmpty {
+                chunks.append(current.joined(separator: "\n")); current = []; length = 0
+            }
+            current.append(line); length += line.count + 1
+        }
+        if current.contains(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) {
+            chunks.append(current.joined(separator: "\n"))
+        }
+        return chunks
+    }
+    /// The `[мм:сс] Имя:` opening of every turn, which a line-by-line cleanup has to hand back
+    /// untouched: these are what the interface links to the audio.
+    public static func turnPrefixes(_ text: String) -> [String] {
+        text.components(separatedBy: .newlines).compactMap { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("["), let close = trimmed.firstIndex(of: "]") else { return nil }
+            let stamp = String(trimmed[trimmed.index(after: trimmed.startIndex)..<close])
+            guard stamp.range(of: #"^\d{1,3}:[0-5]\d$"#, options: .regularExpression) != nil else { return nil }
+            let rest = trimmed[trimmed.index(after: close)...]
+            let speaker = rest.prefix(while: { $0 != ":" }).trimmingCharacters(in: .whitespaces)
+            return stamp + "|" + speaker.lowercased()
+        }
+    }
+    /// A cleaned transcript must have the same turns, in the same order. Dropping, merging or
+    /// reordering them is the failure this catches; the stretch then stays as recognized.
+    public static func keepsTurns(original: String, edited: String) -> Bool {
+        let source = turnPrefixes(original)
+        return !source.isEmpty && source == turnPrefixes(edited)
+    }
     /// Shortest line worth de-duplicating. Below this a repeat is punctuation or a heading,
     /// not a generation loop.
     public static let repeatableLineFloor = 12
@@ -157,6 +191,52 @@ public enum TextSafety {
     /// available (9 September 2026) the split halves of one voice sat at cos 0,84 while genuinely
     /// different voices sat at 0,04 and 0,18 — a wide margin, but one recording, not a corpus.
     public static let identityMergeThreshold: Float = 0.8
+    /// A diarizer identity holding less than this share of the conversation, and less than
+    /// `minorIdentitySeconds` of speech, is a fragment of a neighbouring voice rather than a
+    /// participant of its own. Measured over eleven real meetings in the owner's archive: on the
+    /// 45-minute two-person call the remote voice came back as three identities holding 97 %, 1 %
+    /// and 0 % of the remote speech, and the 1 % and 0 % pieces were that same voice — their
+    /// embeddings sat at cos 0,17 and 0,01 from the dominant one, so no similarity threshold
+    /// would have merged them. Both floors have to be met: 3 % of a 92-minute nine-person call
+    /// was a genuinely quiet participant with two minutes of speech, and dropping them would be
+    /// worse than the problem being fixed.
+    public static let minorIdentityShare = 0.05
+    public static let minorIdentitySeconds = 60.0
+
+    public static func speechTime(_ spans: [SpeakerSpan]) -> [String: Double] {
+        spans.reduce(into: [:]) { total, span in
+            total[span.speaker, default: 0] += max(0, span.end - span.start)
+        }
+    }
+    /// Identities too small to be a participant. Never all of them: something has to remain.
+    public static func minorIdentities(_ spans: [SpeakerSpan]) -> Set<String> {
+        let time = speechTime(spans)
+        let total = time.values.reduce(0, +)
+        guard total > 0, time.count > 1 else { return [] }
+        let minor = time.filter { $0.value / total < minorIdentityShare && $0.value < minorIdentitySeconds }
+        return minor.count == time.count ? [] : Set(minor.keys)
+    }
+    /// Gives a fragment's speech to the surviving voice nearest in time. The alternative — leaving
+    /// it as "Участник 2" — is what made a summary attribute one person's tasks to three people.
+    /// A limit worth knowing: audio from a video played during the call is also a small identity,
+    /// and this folds it into the nearest speaker instead of keeping it apart. Nothing is lost
+    /// from the transcript either way; only the name above the words changes.
+    public static func foldMinorIdentities(_ spans: [SpeakerSpan]) -> [SpeakerSpan] {
+        let minor = minorIdentities(spans)
+        guard !minor.isEmpty else { return spans }
+        let major = spans.filter { !minor.contains($0.speaker) }
+        guard let fallback = major.first else { return spans }
+        return spans.map { span in
+            guard minor.contains(span.speaker) else { return span }
+            var folded = span
+            folded.speaker = (major.min { distance($0, span) < distance($1, span) } ?? fallback).speaker
+            return folded
+        }
+    }
+    private static func distance(_ a: SpeakerSpan, _ b: SpeakerSpan) -> Double {
+        max(0, max(a.start - b.end, b.start - a.end))
+    }
+
     /// An utterance the diarizer left uncovered adopts the nearest identity within this window.
     public static let speakerReachSeconds = 2.0
 
