@@ -111,6 +111,20 @@ final class StructuredSummaryRecordTests: XCTestCase {
         XCTAssertEqual(parse("ФАКТ | Нужно попробовать поднять первый порог | u1").first?.kind, .task)
         XCTAssertEqual(parse("ФАКТ | Готовность дошла до тридцати процентов | u1").first?.kind, .fact)
     }
+    /// A measurement does not open with an infinitive. "Сделать ресерч, выбрать сюжеты и
+    /// адаптировать под них" came back labelled ФАКТ and stood in the figures section.
+    func testAPlanLabelledAsAFactBecomesATaskByItsFirstWord() {
+        XCTAssertEqual(parse("ФАКТ | Сделать ресерч и выбрать сюжеты для прототипа | u1").first?.kind, .task)
+        XCTAssertEqual(parse("ФАКТ | Перегнать метаданные во все четыре типа | u1").first?.kind, .task)
+    }
+    /// A Russian noun of quality ends in the same two letters as a verb, and reading it as one
+    /// filed a measurement in the task table.
+    func testANounThatEndsLikeAnInfinitiveIsNotAPlan() {
+        XCTAssertTrue(StructuredSummary.opensWithAPlan("Сделать ресерч по сюжетам"))
+        XCTAssertFalse(StructuredSummary.opensWithAPlan("Готовность дошла до тридцати процентов"))
+        XCTAssertFalse(StructuredSummary.opensWithAPlan("Возможность есть, но её не проверяли"))
+        XCTAssertFalse(StructuredSummary.opensWithAPlan("Стоимость работ выросла втрое"))
+    }
     /// A decision keeps the model's label even when it is spoken as an obligation. Demoting these
     /// left a 45-minute call with one decision, and the wrong one: in Russian business speech the
     /// decision of a call is routinely said as "надо переносить запуск на следующую неделю".
@@ -244,12 +258,37 @@ final class StructuredSummaryDocumentTests: XCTestCase {
         XCTAssertFalse(result.text.contains("## Открытые вопросы"))
         XCTAssertFalse(result.text.contains("## Состояние и цифры"))
     }
-    func testATaskWithNoNamedOwnerSaysSoInsteadOfInventingOne() async throws {
+    func testATaskWithNoNamedOwnerIsAListRatherThanAColumnOfNothing() async throws {
         let stub = Stub { _, _, _ in "ЗАДАЧА | Участник 2 | Найти хостинг, терпимый к содержимому | - | u4" }
         let result = try await run(stub)
-        XCTAssertTrue(result.text.contains("| не назван |"))
+        XCTAssertTrue(result.text.contains("- Найти хостинг"), result.text)
+        XCTAssertFalse(result.text.contains("| Кто |"), "столбец, в котором каждая строка «не назван», — это столбец ни о чём")
         // The word "Участники:" opens the deterministic paragraph, so look for the label itself.
         XCTAssertNil(result.text.range(of: SummaryQuality.genericOwner, options: .regularExpression))
+    }
+    /// With a name or a deadline against any of them the table earns its columns back.
+    func testTasksBecomeATableOnceOneOfThemHasAnOwner() {
+        let material = SummaryMaterial.parse("[00:10] Паша: первое\n[01:10] Лена: второе")
+        var owned = SummaryRecord(kind: .task, text: "Собрать структуру сайта", evidence: ["u1"])
+        owned.owner = "Паша"
+        let document = StructuredSummary.assemble(
+            [owned, SummaryRecord(kind: .task, text: "Найти хостинг под примеры", evidence: ["u2"])],
+            opening: "Вступление.", material: material)
+        XCTAssertTrue(document.contains("| Кто | Что |"), document)
+        XCTAssertTrue(document.contains("| Паша | Собрать структуру сайта"), document)
+        XCTAssertTrue(document.contains("| не назван | Найти хостинг"), document)
+    }
+    /// A task cell says what to do, so the word saying that something has to be done is the
+    /// column's name rather than part of the task.
+    func testATaskCellDropsTheWordSayingItIsATask() {
+        XCTAssertEqual(StructuredSummary.instruction("Нужно ставить на поток привлечение клиентов"),
+                       "Ставить на поток привлечение клиентов")
+        XCTAssertEqual(StructuredSummary.instruction("Надо будет перенести запуск на следующую неделю"),
+                       "Перенести запуск на следующую неделю")
+        XCTAssertEqual(StructuredSummary.instruction("Нужно, чтобы он передал доступ к аккаунту"),
+                       "Нужно, чтобы он передал доступ к аккаунту")
+        XCTAssertEqual(StructuredSummary.instruction("Перегнать метаданные во все четыре типа"),
+                       "Перегнать метаданные во все четыре типа")
     }
     /// The opening is assembled, never asked for. A 2B model asked to write a paragraph about an
     /// hour of conversation produced "Срок, связанный с 4 позиции, показал…" on real
@@ -545,31 +584,20 @@ final class StructuredSummaryTopicTests: XCTestCase {
         XCTAssertEqual(StructuredSummary.accepted(name: "  «Хостинг и домен».  "), "Хостинг и домен")
     }
 
-    /// What was settled leads the passage and is set in bold, so a reader scanning for the outcome
-    /// of a topic finds it without reading the paragraph. The state of things follows as its own
-    /// paragraph, because in one paragraph the clock jumped backwards at the seam.
-    func testAPassageLeadsWithWhatWasSettledAndKeepsEachParagraphInOrder() {
-        let topic = SummaryTopic(name: "Удержание", records: [
-            record(.fact, "Удержание держится на тридцати процентах", "u1"),
-            record(.decision, "Поднимаем первый порог до двух тысяч", "u3"),
-        ])
-        let passage = StructuredSummary.passage(topic, material: material)
-        XCTAssertTrue(passage.hasPrefix("**Поднимаем первый порог до двух тысяч** [01:10]."), passage)
-        XCTAssertTrue(passage.contains("\n\nУдержание держится на тридцати процентах [00:10]."), passage)
-        XCTAssertFalse(passage.contains(".."), "точка исходной записи не удваивается")
-    }
-    /// Two decisions and two measurements: each paragraph reads forward on its own.
-    func testEachParagraphOfAPassageReadsForward() {
+    /// A passage carries the state of things, in the order of the conversation. What was settled
+    /// is not in it: it has its own list above, where all of it is read at once instead of being
+    /// spread over six paragraphs, and repeating it here would be the document said twice.
+    func testAPassageCarriesTheStateOfThingsInOrder() {
         let longer = SummaryMaterial.parse("[00:10] Паша: первое\n[01:10] Лена: второе\n[02:10] Паша: третье\n[03:10] Лена: четвёртое")
         let topic = SummaryTopic(name: "Порог", records: [
-            record(.decision, "Поднимаем первый порог до двух тысяч", "u3"),
             record(.fact, "Удержание держится на тридцати процентах", "u4"),
-            record(.decision, "Переносим запуск на следующую неделю", "u1"),
+            record(.decision, "Поднимаем первый порог до двух тысяч", "u3"),
             record(.fact, "Готовность работ около половины", "u2"),
         ])
         let passage = StructuredSummary.passage(topic, material: longer)
-        let stamps = RichText.timeReferences(in: passage).map(\.label)
-        XCTAssertEqual(stamps, ["[00:10]", "[02:10]", "[01:10]", "[03:10]"], "каждый абзац идёт вперёд")
+        XCTAssertEqual(RichText.timeReferences(in: passage).map(\.label), ["[01:10]", "[03:10]"])
+        XCTAssertFalse(passage.contains("первый порог"), "решение стоит в своём списке, а не в абзаце")
+        XCTAssertFalse(passage.contains(".."), "точка исходной записи не удваивается")
     }
     /// The dot of a shortened word is not the end of a sentence: stripping it turned "Работы
     /// стоят 20 тыс." into "Работы стоят 20 тыс [12:20]."
@@ -591,10 +619,15 @@ final class StructuredSummaryTopicTests: XCTestCase {
         let document = StructuredSummary.assemble(records, topics: topics, opening: "Вступление.", material: material)
         XCTAssertTrue(document.contains("## По темам"))
         XCTAssertTrue(document.contains("### Удержание"))
-        XCTAssertFalse(document.contains("## Решения"), "решения теперь внутри темы")
-        XCTAssertFalse(document.contains("## Состояние и цифры"), "цифры теперь внутри темы")
-        XCTAssertTrue(document.contains("## Задачи"), "задачи остаются таблицей")
+        XCTAssertTrue(document.contains("## Решения"), "решения читаются одним списком")
+        XCTAssertFalse(document.contains("## Состояние и цифры"), "цифра темы стоит в её абзаце")
+        XCTAssertTrue(document.contains("## Задачи"))
         XCTAssertTrue(document.contains("## Открытые вопросы"))
+        // Outcome, then who owes what, then what nobody answered, and the detail after them.
+        let order = ["## Решения", "## Задачи", "## Открытые вопросы", "## По темам"]
+            .compactMap { document.range(of: $0)?.lowerBound }
+        XCTAssertEqual(order.count, 4)
+        XCTAssertEqual(order, order.sorted(), "итоги впереди подробностей")
     }
     /// One topic is the whole conversation, and a heading saying so adds nothing, so the document
     /// stays as it was. The same path covers a naming call that produced nothing usable.
@@ -796,9 +829,9 @@ final class StructuredSummaryReadabilityTests: XCTestCase {
     }
     func testTheDocumentCarriesWrittenSentences() {
         let topic = SummaryTopic(name: "Сайт", records: [
-            SummaryRecord(kind: .decision, text: "Нужно накидать структуру сайта", evidence: ["u1"]),
+            SummaryRecord(kind: .fact, text: "Структуры сайта пока нет", evidence: ["u1"]),
         ])
-        XCTAssertTrue(StructuredSummary.passage(topic, material: material).hasPrefix("**Нужно накидать"))
+        XCTAssertTrue(StructuredSummary.passage(topic, material: material).hasPrefix("Структуры сайта пока нет"))
     }
 }
 

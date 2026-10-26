@@ -229,4 +229,16 @@ final class FollowUpLetterTests: XCTestCase {
         session.title = "Без конспекта"
         XCTAssertTrue(session.followUpLetter.isEmpty)
     }
+    /// Tasks are a list rather than a table when not one of them has an owner or a deadline, and
+    /// reading only the table lost the whole section from the letter.
+    func testTheLetterReadsATaskListAsWellAsATaskTable() {
+        let letter = meeting("""
+        ## Задачи
+
+        - Найти хостинг под примеры [03:20]
+        - Собрать структуру сайта [05:00]
+        """).followUpLetter
+        XCTAssertTrue(letter.contains("Найти хостинг под примеры"), letter)
+        XCTAssertTrue(letter.contains("Собрать структуру сайта"), letter)
+    }
 }

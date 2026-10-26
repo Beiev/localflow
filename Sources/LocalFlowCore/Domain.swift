@@ -254,6 +254,10 @@ public struct RecordingSession: Codable, Identifiable, Sendable {
             case .bullet(_, _, let text):
                 if section == "questions" { questions.append(clean(text)) }
                 else if section == "decisions" { decisions.append(clean(text)) }
+                // Tasks are a list rather than a table when not one of them has an owner or a
+                // deadline, which on a call between two people whose names were never spoken is
+                // every one of them. Reading only the table lost the whole section.
+                else if section == "tasks" { tasks.append(["", clean(text)]) }
             case .table(_, let rows):
                 if section == "tasks" { tasks += rows }
             case .quote, .divider:
