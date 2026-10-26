@@ -3,6 +3,8 @@
 Checked 8 September 2026 against public pricing/feature pages. Vendor claims are
 not independently verified. LocalFlow row describes v0.3.0 as shipped in this repo.
 
+The meeting side is compared separately, after 0.4.0: [competition-2026-10.md](competition-2026-10.md).
+
 ## The field
 
 | | Wispr Flow | Superwhisper | Aqua Voice | VoiceInk | MacWhisper | Handy | **LocalFlow** |
