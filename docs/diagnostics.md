@@ -40,3 +40,46 @@ Schema 2 adds an index on creation time and identity. Fresh archives run steps 1
 An unsupported newer schema fails with an actionable error instead of rewriting the version. Failed migration rolls back; the backup stays available. To restore manually, quit every LocalFlow process, preserve the current database **and its `-wal`/`-shm` companions**, and restore a chosen backup as `archive.sqlite` with no stale companions left at that destination. Never replace an open database. Old pre-migration binaries do not have the newer-schema protection; downgrading those against a migrated archive is unsupported.
 
 The UI still loads all sessions. Pagination and direct session lookup now exist in the storage API; moving the UI to lightweight pages remains separate work.
+
+## Meeting quality: what is measured, and what the measurement is worth
+
+```sh
+build.noindex/Build/Products/Release/LocalFlowBench identities        # voice identities per meeting, before and after folding
+build.noindex/Build/Products/Release/LocalFlowBench names             # names the recordings themselves offer
+build.noindex/Build/Products/Release/LocalFlowBench summary-quality   # every stored summary, scored against its own transcript
+build.noindex/Build/Products/Release/LocalFlowBench transcript <ID>   # line-by-line cleanup with the real editor
+build.noindex/Build/Products/Release/LocalFlowBench summary-ab <ID>   # both condensing strategies over the same material
+```
+
+All five open SQLite read-only and write nothing back. `summary-quality` and `identities` print only counts and ratios. `names`, `transcript` and `summary-ab` print speech to stdout, because that is the only way to judge the result — the JSON reports they write contain numbers only, and stdout is not committed.
+
+The scores are proxies, not quality. Read them with these limits in mind:
+
+- **Section purity is circular for the structured strategy.** Filing is deterministic in code: a record whose text opens with an intention marker is routed to tasks regardless of the model's own label, and the purity metric checks that same marker list. The structured path therefore reads 1.00 by construction and the number carries no information about it. It still measures the legacy strategy and the documents already in the archive, where the model chose the section.
+- **Citation validity is likewise near-circular now.** The structured strategy never lets the model write a clock reading; timestamps are attached in code from the cited turn, so an unresolvable citation is impossible unless the code is wrong. On the legacy strategy and on archived documents the metric is real, and it is what caught `[134]` — a citation emitted as raw seconds.
+- **Number fidelity needed its own correction.** Figures were first counted over the whole transcript, including the `[мм:сс]` clock and labels such as `Участник 1`, so a summary that said "Участник 1" was credited with a figure the conversation contained. Figures are now counted over the speech only. This moved the archive baseline from 0.94 to 0.84, which means the earlier number was wrong, not that anything regressed.
+- **Fidelity and coverage are different errors.** A document with no figures at all has perfect fidelity and no coverage; a capped extraction that drops the figures that mattered shows up only in coverage.
+- **Redundancy, owner clarity and opening specificity are not circular** and are where the comparison carries weight. Owner clarity moves for two independent reasons — naming the voices, and refusing an owner the recording does not know — so attribute it carefully.
+
+## Where screen reading keeps things, and how to be rid of it
+
+Off unless switched on in Settings. While it is on, each recording gets `screen.jsonl` inside its
+own folder under `Recordings/<session>/`, one JSON line per frame that was read: the time, the
+application name, the window title and the recognized lines. No frames and no video are written at
+any point — the thumbnail used to decide whether a frame changed lives in memory for the length of
+one comparison. Deleting the recording deletes the folder and the journal with it; audio pruning
+after thirty days removes it on the same schedule. The assembled moments are stored inside the
+session row, so deleting the session removes those too.
+
+To see what a recording captured without opening the application:
+
+```sh
+python3 -c 'import json,sys;[print(json.loads(l)["time"], json.loads(l).get("window"), sep="\t") for l in open(sys.argv[1]) if l.strip()]' \
+  ~/Library/Application\ Support/LocalFlow/Recordings/<session>/screen.jsonl
+```
+
+Two limits worth knowing before relying on it. The capture takes the whole display, so a window
+the owner did not mean to share is read if it is in front — pausing the recording pauses the
+reading, and the application's own windows are the only ones excluded by construction. And text
+recognition runs only in the languages this Mac reports as supported; if Russian is not among them
+the journal simply stays empty rather than filling with nonsense.

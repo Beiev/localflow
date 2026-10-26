@@ -402,3 +402,170 @@ reproduced before anything was changed.
   application's own interface, only through the bench harness on the same code path. Which windows
   the negation guard rejected on the 45-minute call was not inspected turn by turn; only that it
   fired and that no turn went missing.
+
+## 2026-10-25 — Condensing as three stages, with the measurement that drove it
+
+The owner called the summaries "crooked, a three out of five". Before changing anything, the
+complaint was turned into counters and every document already in the archive was scored
+(`SummaryQuality`, `LocalFlowBench summary-quality`). The baseline over twelve stored summaries:
+compression mean 0.420 / median 0.156, section purity mean 0.80, redundancy mean 7.42 (median 0),
+citation validity 0.98, number fidelity 0.84, owner clarity 0.75, and **one specific opening out
+of twelve** — and that one belongs to a 25-second junk recording. Eleven of eleven real openings
+were generic enough to head any meeting ever held.
+
+Two defects in the measuring instrument were found and fixed before it was trusted. Figures were
+first counted over the whole transcript, so the clock in `[04:41]` and the digit in `Участник 1`
+counted as figures the conversation contained, and a summary that said "Участник 1" was credited
+with one; counting over the speech only moved the archive's number fidelity from 0.94 to 0.84, so
+the earlier figure was simply wrong. And an opening passed the specificity check on the word
+"решено" alone — "было решено сделать что-то нормальное" scored as specific — so the check now
+requires a figure or the name of somebody present.
+
+**What the new path does.** Turns get stable identifiers; the model is shown identifiers and
+speaker names and never a clock, so it cannot write a timestamp or emit raw seconds. It reads
+~3 000 characters of conversation at a time and returns pipe-delimited typed lines — fact,
+decision, task, question — citing the turns each came from. A line format was chosen over JSON on
+purpose: a malformed line is dropped on its own while a malformed JSON document fails whole, and
+the pinned mlx-swift-lm 3.31.4 has no constrained decoding. Everything after extraction is code: a
+record citing a turn outside the window it was shown is dropped as invented, a fact or decision
+opening with an intention marker becomes a task, an owner is accepted only if it matches a speaker
+the recording knows, paraphrases within a kind are merged by stemmed token overlap, each window
+contributes at most five records and each section keeps at most 12–15, and the document is
+assembled with the clock attached from the earliest cited turn. The opening is written last from
+the records that survived and refused twice if it fails the specificity check, then built
+deterministically.
+
+**The first attempt was worse to read, and the metrics said it was better.** Without the per-window
+cap, the 12-minute call produced 59 bullets and 4 173 characters — 41 % of the conversation, an
+indexed transcript rather than a summary — with purity 1.00 and no duplicates. The facts section
+filled with fragments like "скинуть что-то" and "туда погнали". Capping records per window and per
+section, requiring 25 characters and four words per assertion, and ranking what survives brought
+the same call to 1 696 characters and 15 bullets. This is why the document itself is read and not
+only its score.
+
+**Two metrics are now circular and are reported as such.** Filing is deterministic in code against
+the same marker list the purity metric checks, so the structured path reads purity 1.00 by
+construction and that number carries no information about it. Citation validity is near-circular
+for the same reason: the model never writes a clock reading. Both still measure the legacy strategy
+and the archived documents, where the model chose the section and wrote the timestamps — that is
+how `[134]` was caught. The comparison's weight therefore sits on redundancy, number fidelity and
+coverage, owner clarity, length, and the opening.
+
+**Measured, both strategies run back to back over the same prepared material** — small voice
+identities folded and proposed names applied, which is the state the interface reaches once the
+owner accepts what the recording offers. `LocalFlowBench summary-ab`, Gemma 4 E2B, temperature 0,
+26 October, final code.
+
+45-minute two-person call (172 turns, 37 601 characters; names Макс and Пётр were available):
+
+| | in the archive | legacy, re-run | structured |
+|---|---:|---:|---:|
+| characters | 2 389 | 2 498 | 2 710 |
+| bullets | 25 | 22 | 31 |
+| figures grounded in the speech | 14/25 | 16/18 | **31/32** |
+| figures of the conversation carried | 13/37 | 12/37 | **17/37** |
+| citations that open the audio | 25/25 | 22/22 | 31/31 |
+| paraphrased repeats | 0.04 | 0 | 0 |
+| tasks | 8 | 7 | 9 |
+| tasks owned by a diarizer label | **8** | 0 | 0 |
+| opening says something only this call could | no | no | **yes** |
+| model calls / seconds | — | 1 / 64.2 | 12 / 119.7 |
+
+12-minute call (46 turns, 10 154 characters; **no names were available**, so this isolates the
+architecture from the naming work):
+
+| | in the archive | legacy, re-run | structured |
+|---|---:|---:|---:|
+| characters | 1 886 | 1 176 | 1 572 |
+| bullets | 18 | 4 | 13 |
+| section purity | 0.50 | 0.50 | 1.00 (enforced) |
+| citations that open the audio | 15/21 | 7/7 | 13/13 |
+| figures grounded in the speech | 7/13 | 4/4 | 12/13 |
+| figures of the conversation carried | 5/6 | 4/6 | 3/6 |
+| opening says something only this call could | no | no | **yes** |
+| model calls / seconds | — | 1 / 17.5 | 4 / 28.2 |
+
+**What this establishes, and what it does not.** Section purity and citation validity are enforced
+by construction on the structured path and carry no information there. The findings that do carry
+weight on the long call: figures grounded 14/25 → 31/32, figures of the conversation carried
+13/37 → 17/37, repeats gone, every task owned by a person or by nobody rather than by a label, and
+an opening that is about this call. Cost: twelve model calls instead of one and roughly twice the
+wall time, in the background.
+
+Two results go the other way and are not hidden. On the short call the structured document carries
+**fewer** of the conversation's figures than the archived one (3 of 6 against 5 of 6): the
+per-window and per-section caps that stopped the 41 % indexed-transcript also drop figures from a
+conversation that only had six. And one task there still counts as owned by a label, because the
+metric looks for the label pattern anywhere in a task's text, not only in its owner field.
+
+One result must be attributed carefully. The archive's worst defect on the long call — all eight
+tasks handed to "Участник 1" — went to zero on the **legacy** path too, as soon as the voices were
+folded and named. That fix belongs to the naming work, not to the pipeline. The pipeline's own
+contribution to ownership is refusing an owner the recording does not know.
+
+**Not verified:** nine of eleven meetings were not re-condensed — each run costs minutes of local
+compute, and the two chosen are the owner's most recent call and the worst-scoring one. No human
+judged whether the new documents read better; what was done instead was reading them by hand on
+every iteration, which is what caught the four defects recorded above. The interface showing them
+was not seen running.
+
+## 2026-10-26 — Reading the condensed document, and what that found
+
+The measurement said the structured path was better on every counter. Reading its output on a real
+45-minute call said otherwise four times, and each of those is now a regression test. This is the
+entry to re-read before trusting a score again.
+
+1. **Over-extraction.** Without a cap, the 12-minute call came back as 59 bullets and 4 173
+   characters — 41 % of the conversation — with perfect purity and no duplicates. The figures
+   section filled with fragments: "скинуть что-то", "туда погнали". Fixed with a per-window cap, a
+   25-character and four-word floor per assertion, and section caps.
+2. **The cap then starved the decisions.** A single pooled ceiling of five records per window,
+   ranked by a weight that rewards a figure, handed every slot to numeric facts: the 45-minute call
+   came out with twelve figures, seven tasks and **one** decision, and it was the wrong one. Each
+   kind now has its own quota per window.
+3. **A decision spoken as an obligation is still a decision.** The first router demoted any
+   fact *or decision* opening with "надо"/"нужно" to a task. In Russian business speech the
+   decision of a call is routinely said that way — "надо переносить запуск на следующую неделю" is the decision of this one — so demoting them emptied the section. Facts phrased as
+   intentions are still re-filed; decisions keep the model's label; and a task with no action in it
+   is now re-filed as a fact, which is what "если первый вариант стоит 20 единиц, то второй стоит 3" was.
+4. **The model could not write the opening, and the metric could not tell.** The specificity check
+   distinguishes a generic paragraph from a concrete one; it cannot distinguish a coherent sentence
+   from an incoherent one. The accepted attempt read "Срок, связанный с 4 позиции,
+   показал, что из них 3 закрыли…" — every counter satisfied, unreadable. The opening is now
+   assembled in code from the records that survived, which also saves two model calls. It is duller
+   than a written paragraph and it is true.
+
+Two more defects came out of reading the code rather than the output. Word overlap by Jaccard
+scored "нам нужно написать инструкцию для подрядчика" against "выглядит так, что нам надо писать инструкцию" at 0,45 — Russian prefixes make "ставить" and "поставить"
+different stems — so the pair survived as two bullets; containment reads it at 0,71. And the
+figures section was ordered by a comparator that asked only whether one entry had figures and the
+other did not, which is not a strict weak ordering: Swift's sort scrambled the section, and it did
+so visibly.
+
+**A one-way door, caught by the harness.** Adding `screen` to `RecordingSession` as a non-optional
+array with a default value made **every session in the archive** fail to decode — not only
+meetings — because a synthesized `Decodable` requires each non-optional key regardless of its
+default. `LocalFlowBench` surfaced it immediately as "The data couldn't be read because it is
+missing"; in the application it would have emptied the archive view. The field is now stored
+optional, and three tests pin the minimal stored shape so the next added field hits a red test
+instead of the archive.
+
+## 2026-10-26 — Reading the shared screen (not verified live)
+
+Built: a second output on the ScreenCaptureKit stream that already carries system audio, with its
+own queue; a frame every three seconds reduced to a 16×16 greyscale thumbnail; recognition only of
+frames that differ from the last one *read*; Vision text recognition narrowed to the languages this
+Mac reports as supported, because asking for an unsupported language fails the request outright
+rather than degrading; a journal written line by line beside the audio; assembly into moments with
+a start and an end; citation identifiers so an assertion can point at a document that was shown;
+and a "Что показывали" section plus a screen tab. Off by default, excluded from the picture are the
+app's own windows, paused with the recording, deleted with the session.
+
+**Not verified, and not claimed.** No live capture was run. Exercising it means recording the
+owner's actual screen, which is not something to do unasked, so there are no measured numbers for
+disk per hour, CPU, recognition latency, or how well Russian text comes off a real dashboard — and
+no evidence that `VNRecognizeTextRequest` on this Mac supports Russian at all, only code that
+checks before asking. What is verified is the policy: 20 tests over change detection, text
+normalization, moment assembly, citation scoping and the document, plus compilation of the capture
+path. The first real meeting with it on is the test, and it should be a meeting whose screen the
+owner is content to have read.

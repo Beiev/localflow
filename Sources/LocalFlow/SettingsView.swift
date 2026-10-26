@@ -84,6 +84,7 @@ struct SettingsView: View {
     @AppStorage("editingMode") private var editingMode = "clean"
     @AppStorage("editingStyle") private var editingStyle = ""
     @AppStorage("ownerName") private var ownerName = ""
+    @AppStorage("captureScreen") private var captureScreen = false
     @AppStorage("editorModel") private var editorModel = "editor"
     @AppStorage("settingsPage") private var page = "general"
     @StateObject private var recorder = ShortcutRecorder()
@@ -127,6 +128,9 @@ struct SettingsView: View {
                 Text("Повторное нажатие завершает запись; Esc отменяет. Сочетания с ⌘ срабатывают только с левого ⌘, чтобы правый ⌘ продолжал работать в приложениях.").foregroundStyle(.secondary)
                 Divider()
                 Text("Созвоны: системный звук и отдельная дорожка микрофона. Shure MV7+ выбирается автоматически, когда подключён.").foregroundStyle(.secondary)
+                Divider()
+                Toggle("Читать экран во время созвона", isOn: $captureScreen)
+                Text("Раз в несколько секунд снимается кадр показанного экрана, с него снимается текст, и в запись попадают только этот текст и заголовок окна — не видео и не сами кадры. Так в конспекте появляется, что показывали. Окна самого LocalFlow исключены. Выключается здесь и вместе с паузой записи; удаляется вместе с записью.").foregroundStyle(.secondary)
             }
             card("Вы") {
                 HStack {

@@ -45,12 +45,14 @@ public final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, AVC
     private var failure: String?
     private var lastJournalWrite: Double = 0
     private let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
+    /// Reads the shared screen on its own output and queue when a meeting asks for it.
+    public let screen = ScreenRecorder()
     public var onFrame: (@Sendable (AudioFrame) -> Void)?
     public var onError: (@Sendable (UUID, String) -> Void)?
     public var onStatus: (@Sendable (UUID, String) -> Void)?
     public override init() { super.init() }
 
-    public func start(id: UUID, captureSystemAudio: Bool = false, append: Bool = false) async throws {
+    public func start(id: UUID, captureSystemAudio: Bool = false, captureScreen: Bool = false, append: Bool = false) async throws {
         await lifecycle.acquire()
         do {
             try Task.checkCancellation()
@@ -76,13 +78,33 @@ public final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, AVC
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
                 try Task.checkCancellation()
                 guard let display = content.displays.first else { throw LocalFlowError.message("Нет экрана для захвата звука") }
-                let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
+                // Our own windows are excluded whenever pictures are taken: the recording panel
+                // and the archive must not end up in a record of what was shown.
+                let ourselves = content.applications.filter { $0.processID == getpid() }
+                let filter = SCContentFilter(display: display,
+                                             excludingApplications: captureScreen ? ourselves : [],
+                                             exceptingWindows: [])
                 let config = SCStreamConfiguration()
                 config.capturesAudio = true; config.excludesCurrentProcessAudio = true
                 config.sampleRate = 48000; config.channelCount = 2
-                config.width = 2; config.height = 2; config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+                if captureScreen {
+                    // Big enough to read text off, small enough to reduce and recognize cheaply.
+                    let scale = min(1, Double(ScreenRecorder.widestFrame) / Double(max(1, display.width)))
+                    config.width = Int(Double(display.width) * scale)
+                    config.height = Int(Double(display.height) * scale)
+                    config.minimumFrameInterval = ScreenRecorder.frameInterval
+                    config.showsCursor = false
+                    config.queueDepth = 3
+                } else {
+                    // ScreenCaptureKit requires a video configuration even for audio alone.
+                    config.width = 2; config.height = 2; config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+                }
                 let stream = SCStream(filter: filter, configuration: config, delegate: self)
                 try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
+                if captureScreen {
+                    screen.start(id: id, epoch: ProcessInfo.processInfo.systemUptime - offset)
+                    try stream.addStreamOutput(screen, type: .screen, sampleHandlerQueue: screen.queue)
+                }
                 try await onQueue { self.stream = stream }
                 try await stream.startCapture()
             }
@@ -176,7 +198,7 @@ public final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, AVC
         writers.values.forEach { $0.close() }; writers = [:]; persist()
         onError?(sessionID, message)
     }
-    public func setPaused(_ value: Bool) { queue.async { self.paused = value } }
+    public func setPaused(_ value: Bool) { queue.async { self.paused = value }; screen.pause(value) }
     public func checkpoint() async {
         try? await onQueue { self.writers.values.forEach { $0.close() }; self.writers = [:]; self.persist() }
     }
@@ -186,6 +208,7 @@ public final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, AVC
         await lifecycle.release()
     }
     private func stopCapture() async {
+        screen.stop()
         let stream = try? await onQueue {
             self.stopping = true; self.running = false
             self.watchdog?.cancel(); self.watchdog = nil

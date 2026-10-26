@@ -71,6 +71,18 @@ public struct RecordingSession: Codable, Identifiable, Sendable {
     public var dictationMetrics: DictationMetrics?
     public var speakers: [String: String] = [:]
     public var embeddings: [String: [Float]] = [:]
+    /// What the shared screen showed, when screen capture was on for this recording. Text and
+    /// window titles only; never video.
+    ///
+    /// Stored optional on purpose. A synthesized `Decodable` requires every non-optional key even
+    /// when the property has a default, so adding one as `[ScreenMoment] = []` made every session
+    /// already in the archive fail to decode — the whole archive, not just meetings. Optional
+    /// decodes as absent, which is what an old recording is.
+    private var screenMoments: [ScreenMoment]?
+    public var screen: [ScreenMoment] {
+        get { screenMoments ?? [] }
+        set { screenMoments = newValue.isEmpty ? nil : newValue }
+    }
     public init(kind: SessionKind) { self.kind = kind; self.title = kind.title + " " + Date().formatted(date: .abbreviated, time: .shortened) }
     public static func draftNote() -> RecordingSession {
         var note = RecordingSession(kind: .note)
@@ -129,11 +141,20 @@ public struct RecordingSession: Codable, Identifiable, Sendable {
     public var participantCount: Int {
         embeddings.count + (segments.contains { $0.source == "microphone" } ? 1 : 0)
     }
-    /// Summary and transcript in one Markdown document, for pasting a whole meeting somewhere else.
+    /// What the shared screen showed, as Markdown, for the screen tab and for copying.
+    public var screenDocument: String {
+        screen.map { moment in
+            let where_ = [moment.app, moment.window].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " — ")
+            return "### \(moment.timestamp) \(where_.isEmpty ? moment.title : where_)\n\n\(moment.text)"
+        }.joined(separator: "\n\n")
+    }
+    /// Summary, transcript and what was shown in one Markdown document, for pasting a whole
+    /// meeting somewhere else.
     public var shareableDocument: String {
         var parts = ["# \(title)", durationLine]
         if let summary { parts.append(contentsOf: ["## Конспект", summary.text]) }
         parts.append(contentsOf: ["## Расшифровка", cleanTranscript?.text ?? referencedText])
+        if !screen.isEmpty { parts.append(contentsOf: ["## Что показывали", screenDocument]) }
         return parts.filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
     private var durationLine: String {

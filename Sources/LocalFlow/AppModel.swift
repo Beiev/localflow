@@ -74,6 +74,9 @@ final class AppModel: ObservableObject {
     private var maintenanceTimer: Timer?
     var defaultEditingMode: ProcessingMode { UserDefaults.standard.string(forKey: "editingMode") == "compose" ? .compose : .clean }
     var editingStyle: String { UserDefaults.standard.string(forKey: "editingStyle") ?? "" }
+    /// Reading the shared screen during a call is off until asked for: it is a record of what was
+    /// on screen, which is not what somebody starts a recording expecting.
+    var readsScreenInMeetings: Bool { UserDefaults.standard.bool(forKey: "captureScreen") }
     func createNote() {
         guard active == nil, !processing, !isStarting else { return }
         let note = RecordingSession.draftNote()
@@ -235,7 +238,9 @@ final class AppModel: ObservableObject {
                 startDate = Date().addingTimeInterval(-session.duration)
                 status = "Запускаю микрофон…"
                 if kind == .dictation { Self.startupLog.info("Entrance complete; requesting microphone capture") }
-                try await capture.start(id: session.id, captureSystemAudio: kind == .meeting, append: existing != nil && FileManager.default.fileExists(atPath: AppPaths.audio(session.id).appendingPathComponent("parts.json").path))
+                try await capture.start(id: session.id, captureSystemAudio: kind == .meeting,
+                                        captureScreen: kind == .meeting && readsScreenInMeetings,
+                                        append: existing != nil && FileManager.default.fileExists(atPath: AppPaths.audio(session.id).appendingPathComponent("parts.json").path))
                 try Task.checkCancellation()
                 isStarting = false
                 status = "Слушаю…"
@@ -442,6 +447,12 @@ final class AppModel: ObservableObject {
             catch { result.error = "Голоса не разделены: \(error.localizedDescription)" }
         }
         result.segments = TranscriptAssembly.group(result.segments)
+        if result.kind == .meeting {
+            // What the screen showed, assembled from the journal written during the call. Absent
+            // when screen reading was off, and harmless to ask for either way.
+            let moments = ScreenRecorder.moments(result.id, until: result.duration)
+            if !moments.isEmpty { result.screen = moments }
+        }
         let raw = result.kind == .meeting ? result.referencedText : result.rawText
         finalText = TextSafety.minimalCleanup(raw, dictionary: dictionary)
         var needsReview = false
@@ -451,8 +462,14 @@ final class AppModel: ObservableObject {
             let mode: ProcessingMode = result.kind == .meeting ? .summary : (result.editingMode ?? defaultEditingMode)
             status = mode.progressTitle
             do {
-                let edit = try await editor.edit(raw, mode: mode, dictionary: dictionary, style: result.editingStyle ?? editingStyle)
-                result.versions.append(TextVersion(mode: mode, text: edit.text, reviewIssues: edit.issues))
+                let edit = try await editor.edit(raw, mode: mode, dictionary: dictionary, style: result.editingStyle ?? editingStyle, screen: result.screen)
+                // An empty result is not a version. Condensing can legitimately find nothing worth
+                // keeping, and saving that leaves the summary tab showing a blank document.
+                if !edit.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    result.versions.append(TextVersion(mode: mode, text: edit.text, reviewIssues: edit.issues))
+                } else if mode.condenses {
+                    result.error = "В записи не нашлось материала для конспекта. Расшифровка сохранена."
+                }
                 finalText = edit.delivery(original: raw, dictionary: dictionary)
                 usedFallback = edit.guarded
                 timing?.reviewIssues = edit.issues
@@ -557,9 +574,16 @@ final class AppModel: ObservableObject {
         var pending = session; pending.pendingMode = mode; pending.state = "processing"; try? store.save(pending); status = mode.progressTitle
         processingTask = Task {
             do {
-                let edit = try await editor.edit((mode == .clean || mode == .compose) ? session.rawText : session.referencedText, mode: mode, dictionary: dictionary, style: editingStyle)
+                let edit = try await editor.edit((mode == .clean || mode == .compose) ? session.rawText : session.referencedText, mode: mode, dictionary: dictionary, style: editingStyle, screen: session.screen)
                 try Task.checkCancellation()
-                var updated = session; updated.pendingMode = nil; updated.state = "ready"; updated.versions.append(.init(mode: mode, text: edit.text, reviewIssues: edit.issues)); updated.error = edit.guarded ? edit.reviewMessage + " Редактура сохранена отдельно от исходника." : nil; try store.save(updated)
+                var updated = session; updated.pendingMode = nil; updated.state = "ready"
+                if edit.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    updated.error = "Обработка не дала результата. Исходник сохранён."
+                } else {
+                    updated.versions.append(.init(mode: mode, text: edit.text, reviewIssues: edit.issues))
+                    updated.error = edit.guarded ? edit.reviewMessage + " Редактура сохранена отдельно от исходника." : nil
+                }
+                try store.save(updated)
             } catch { persistInterruption(session.id, error: error); if !Task.isCancelled { self.error = error.localizedDescription } }
             processing = false; currentJobID = nil; refresh(); await scheduleUnload(); resumeQueued()
         }

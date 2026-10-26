@@ -92,3 +92,32 @@ final class RichTextTests: XCTestCase {
         XCTAssertEqual(RichText.resolvableReferences(in: text, duration: 0).resolvable, 0)
     }
 }
+
+/// Shapes found in the owner's archive that the first parser missed.
+final class RichTextArchiveShapeTests: XCTestCase {
+    /// One summary is written with the section title and its first sentence on one line. Read as
+    /// prose, it lost all five sections and its forty-one bullets had nothing to belong to.
+    func testBoldTitleWithTrailingTextBecomesHeadingPlusParagraph() {
+        let blocks = RichText.blocks("""
+        **О чём** — Разбор просадки и метрик за две недели.
+
+        **Состояние и цифры** —
+        * Первый пункт
+        """)
+        XCTAssertEqual(blocks, [
+            .heading(level: 3, text: "О чём"),
+            .paragraph("Разбор просадки и метрик за две недели."),
+            .heading(level: 3, text: "Состояние и цифры"),
+            .bullet(indent: 0, marker: nil, text: "Первый пункт"),
+        ])
+    }
+    /// A separator is required, so emphasis opening an ordinary sentence stays prose.
+    func testBoldOpeningAnOrdinarySentenceIsStillProse() {
+        XCTAssertEqual(RichText.blocks("**Важно** это обычное предложение без тире."),
+                       [.paragraph("**Важно** это обычное предложение без тире.")])
+    }
+    func testMalformedCitationsAreCounted() {
+        XCTAssertEqual(RichText.malformedTimeReferences(in: "задача [134] и ещё [9] и [01:20]"), 2)
+        XCTAssertEqual(RichText.malformedTimeReferences(in: "всё хорошо [01:20] [1:02:03]"), 0)
+    }
+}

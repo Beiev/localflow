@@ -120,3 +120,42 @@ final class StoreMigrationTests: XCTestCase {
         XCTAssertNil(try store.session(session.id)); XCTAssertTrue(try store.search("Renamed").isEmpty)
     }
 }
+
+/// A stored session is a JSON blob, and a synthesized `Decodable` requires every non-optional key
+/// even when the property has a default. Adding one as a non-optional with a default made every
+/// session in the archive fail to decode — the whole archive, not just the meetings that would
+/// have carried the new field.
+final class SessionShapeCompatibilityTests: XCTestCase {
+    func testASessionSavedBeforeScreenCaptureExistedStillDecodes() throws {
+        let old = """
+        {"id":"1D6C9C61-2F2A-4E0E-9A3B-0C0C9D1E7A01","createdAt":780000000,"title":"Созвон",
+         "kind":"meeting","duration":120,"segments":[],"versions":[],"pinned":false,
+         "state":"ready","speakers":{},"embeddings":{}}
+        """
+        let session = try JSONDecoder().decode(RecordingSession.self, from: Data(old.utf8))
+        XCTAssertEqual(session.kind, .meeting)
+        XCTAssertTrue(session.screen.isEmpty)
+    }
+    /// And a round trip keeps what was captured.
+    func testScreenMomentsSurviveARoundTrip() throws {
+        var session = RecordingSession(kind: .meeting)
+        session.screen = [ScreenMoment(start: 5, end: 60, app: "Notion", window: "План", text: "Пункт первый")]
+        let decoded = try JSONDecoder().decode(RecordingSession.self, from: try JSONEncoder().encode(session))
+        XCTAssertEqual(decoded.screen.count, 1)
+        XCTAssertEqual(decoded.screen.first?.window, "План")
+        XCTAssertEqual(decoded.screen.first?.text, "Пункт первый")
+    }
+    /// Every other optional added over the life of the archive is still optional, so the minimal
+    /// shape above has to keep decoding. This is the regression the next added field will hit.
+    func testTheMinimalStoredShapeDecodesWithoutAnyLaterField() throws {
+        let minimal = """
+        {"id":"1D6C9C61-2F2A-4E0E-9A3B-0C0C9D1E7A02","createdAt":780000000,"title":"Диктовка",
+         "kind":"dictation","duration":5,"segments":[],"versions":[],"pinned":false,
+         "state":"ready","speakers":{},"embeddings":{}}
+        """
+        let session = try JSONDecoder().decode(RecordingSession.self, from: Data(minimal.utf8))
+        XCTAssertEqual(session.title, "Диктовка")
+        XCTAssertNil(session.dictationMetrics)
+        XCTAssertNil(session.expectedRemoteSpeakers)
+    }
+}

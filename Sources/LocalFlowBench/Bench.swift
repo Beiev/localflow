@@ -257,6 +257,90 @@ struct Bench {
                 print("----- cleaned transcript (stdout only) -----")
                 print(cleaned.text)
                 await engine.unload()
+            case "summary-quality":
+                // Scores the condensed documents already in the archive against their own
+                // transcripts: the "before" this work is measured against. Numbers only.
+                let archive = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"), readOnly: true)
+                var scores: [SummaryScore] = []
+                for meeting in try archive.sessions().filter({ $0.kind == .meeting }) {
+                    guard let summary = meeting.summary, !meeting.segments.isEmpty else { continue }
+                    let names = meeting.speakers.values.filter { !$0.isEmpty }
+                    let score = SummaryQuality.score(summary.text, source: meeting.referencedText,
+                                                     duration: meeting.duration, speakers: Array(names))
+                    scores.append(score)
+                    print("\(meeting.id.uuidString.prefix(8)) \(String(format: "%5.1f", meeting.duration / 60))m \(score.line)")
+                }
+                func mean(_ value: (SummaryScore) -> Double) -> Double {
+                    scores.isEmpty ? 0 : scores.map(value).reduce(0, +) / Double(scores.count)
+                }
+                // Two of these documents are known failures of a merge pass that was fixed in
+                // September: 18 000 and 20 000 characters of near-verbatim repetition. They pull
+                // the mean so far that it stops describing anything, so the median is reported
+                // beside it rather than quietly dropping them.
+                func median(_ value: (SummaryScore) -> Double) -> Double {
+                    let sorted = scores.map(value).sorted()
+                    guard !sorted.isEmpty else { return 0 }
+                    return sorted.count % 2 == 1 ? sorted[sorted.count / 2]
+                        : (sorted[sorted.count / 2 - 1] + sorted[sorted.count / 2]) / 2
+                }
+                for (name, value) in [("mean", mean), ("median", median)] as [(String, ((SummaryScore) -> Double) -> Double)] {
+                    print(String(format: "n=%d %@ compression=%.3f purity=%.2f redundancy=%.2f citation_validity=%.2f number_fidelity=%.2f number_coverage=%.2f owner_clarity=%.2f",
+                                 scores.count, name, value(\.compression), value(\.sectionPurity), value(\.redundancy),
+                                 value(\.citationValidity), value(\.numberFidelity), value(\.numberCoverage), value(\.ownerClarity)))
+                }
+                print("specific_openings=\(scores.filter(\.openingIsSpecific).count)/\(scores.count)")
+            case "summary-ab":
+                // Runs both condensing strategies over the same prepared material and scores them,
+                // so an architecture win can be told apart from a model win. Nothing is written
+                // back. Numbers to the file, text to stdout.
+                guard args.count >= 2 else { throw LocalFlowError.message("summary-ab SESSION_PREFIX [OUTPUT.json]") }
+                let wanted = args[1].lowercased()
+                let store = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"), readOnly: true)
+                guard let stored = try store.sessions().first(where: { $0.id.uuidString.lowercased().hasPrefix(wanted) }) else {
+                    throw LocalFlowError.message("No session starts with \(args[1])")
+                }
+                // The state the interface reaches once the owner accepts what the recording offers:
+                // small identities folded, proposed names applied. Both strategies read it.
+                var prepared = stored.foldingMinorIdentities()
+                for proposal in SpeakerNaming.proposals(for: prepared) where (prepared.speakers[proposal.id] ?? "").isEmpty {
+                    prepared.speakers[proposal.id] = proposal.name
+                }
+                let source = prepared.referencedText
+                let names = Array(prepared.speakers.values.filter { !$0.isEmpty })
+                print("session=\(stored.id.uuidString.prefix(8)) minutes=\(String(format: "%.1f", stored.duration / 60)) referenced=\(source.count) turns=\(SummaryMaterial.parse(source).turns.count) names=\(names.sorted())")
+                if let existing = stored.summary {
+                    let score = SummaryQuality.score(existing.text, source: source, duration: stored.duration, speakers: names)
+                    print("archive    \(score.line)")
+                }
+                var rows: [String: Any] = ["session": stored.id.uuidString, "duration_s": stored.duration,
+                                           "referenced_characters": source.count]
+                let dictionary = try store.dictionary()
+                for strategy in [EditPlan.SummaryStrategy.legacy, .structured] {
+                    let engine = TextEngine()
+                    let start = Date()
+                    let result = try await engine.edit(source, mode: .summary, dictionary: dictionary, strategy: strategy)
+                    let elapsed = Date().timeIntervalSince(start)
+                    let score = SummaryQuality.score(result.text, source: source, duration: stored.duration, speakers: names)
+                    print("\(strategy.rawValue.padding(toLength: 10, withPad: " ", startingAt: 0)) \(score.line) calls=\(result.proposals.count) elapsed_s=\(String(format: "%.1f", elapsed))")
+                    rows["\(strategy.rawValue)_characters"] = score.characters
+                    rows["\(strategy.rawValue)_purity"] = score.sectionPurity
+                    rows["\(strategy.rawValue)_redundancy"] = score.redundancy
+                    rows["\(strategy.rawValue)_citation_validity"] = score.citationValidity
+                    rows["\(strategy.rawValue)_number_fidelity"] = score.numberFidelity
+                    rows["\(strategy.rawValue)_owner_clarity"] = score.ownerClarity
+                    rows["\(strategy.rawValue)_opening_specific"] = score.openingIsSpecific
+                    rows["\(strategy.rawValue)_tasks"] = score.tasks
+                    rows["\(strategy.rawValue)_bullets"] = score.bullets
+                    rows["\(strategy.rawValue)_calls"] = result.proposals.count
+                    rows["\(strategy.rawValue)_elapsed_s"] = elapsed
+                    print("--- \(strategy.rawValue) (stdout only) ---")
+                    print(result.text)
+                    await engine.unload()
+                }
+                if args.count > 2 {
+                    try JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys])
+                        .write(to: URL(fileURLWithPath: args[2]), options: .atomic)
+                }
             case "storage":
                 // Accelerated two-hour PCM stress test. This does not simulate a real call.
                 let id = UUID(); let root = AppPaths.audio(id)

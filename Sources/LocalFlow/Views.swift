@@ -246,7 +246,7 @@ struct SessionView: View {
     @ObservedObject var model: AppModel
     let session: RecordingSession
 
-    enum Pane: Hashable { case primary, transcript, source, version(Int) }
+    enum Pane: Hashable { case primary, transcript, screen, source, version(Int) }
 
     @State private var pane: Pane?
     @State private var editText = ""
@@ -268,6 +268,7 @@ struct SessionView: View {
         if isMeeting {
             if current.summary != nil { value.append(.primary) }
             value.append(.transcript)
+            if !current.screen.isEmpty { value.append(.screen) }
         } else if current.versions.last != nil {
             value.append(.primary)
         }
@@ -280,6 +281,7 @@ struct SessionView: View {
         switch pane {
         case .primary: return isMeeting ? "Конспект" : "Текст"
         case .transcript: return "Расшифровка"
+        case .screen: return "Экран"
         case .source: return "Исходник"
         case .version(let index):
             // Reprocessing replaces the version list while a version tab is open; an unchecked
@@ -303,6 +305,7 @@ struct SessionView: View {
         switch selected {
         case .primary: primaryVersion?.text ?? current.referencedText
         case .transcript: current.cleanTranscript?.text ?? current.referencedText
+        case .screen: current.screenDocument
         case .source: current.referencedText
         case .version(let index): index < current.versions.count ? current.versions[index].text : ""
         }
@@ -435,6 +438,7 @@ struct SessionView: View {
         } else {
             switch selected {
             case .source: sourceTurns
+            case .screen: screenMoments
             case .transcript where current.cleanTranscript == nil: transcriptInvitation
             default:
                 if shownText.isEmpty { Text("Здесь пока ничего нет.").foregroundStyle(.secondary) }
@@ -461,6 +465,38 @@ struct SessionView: View {
                     }
                     Spacer(minLength: 0)
                 }
+            }
+        }
+    }
+
+    /// What the shared screen showed, as moments rather than frames: no picture was kept, only
+    /// the text that was read off it and the window it belonged to.
+    private var screenMoments: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Читалось с показанного экрана: текст и заголовки окон. Кадры и видео не сохраняются.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ForEach(current.screen) { moment in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Button(moment.timestamp) { model.playMoment(current, at: moment.start) }
+                            .buttonStyle(.plain).font(.caption.monospaced()).foregroundStyle(FlowTheme.accent)
+                        Text(moment.title).font(.callout.weight(.medium)).lineLimit(1)
+                        if moment.duration >= 30 {
+                            Text(Duration.seconds(moment.duration).formatted(.time(pattern: .minuteSecond)))
+                                .font(.caption2).foregroundStyle(.tertiary)
+                        }
+                        Spacer(minLength: 0)
+                        if let app = moment.app, !app.isEmpty, app != moment.title {
+                            Text(app).font(.caption2).foregroundStyle(.secondary)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Color.primary.opacity(0.06), in: Capsule())
+                        }
+                    }
+                    Text(moment.text).font(.callout).lineSpacing(3).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(12)
+                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
             }
         }
     }

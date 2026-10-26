@@ -27,8 +27,10 @@ final class EditPlanTests: XCTestCase {
     private func condensingChunks(_ source: String) -> Int {
         TextSafety.chunks(source, maxCharacters: EditPlan.condensingChunkCharacters).count
     }
+    /// These describe the single free-text pass, which is kept reachable for comparison. The
+    /// structured path that replaced it as the default has its own suite.
     private func run(_ text: String, mode: ProcessingMode, stub: StubResponder) async throws -> EditResult {
-        try await EditPlan.run(text: text, mode: mode, dictionary: []) { prompt, instructions in
+        try await EditPlan.run(text: text, mode: mode, dictionary: [], strategy: .legacy) { prompt, instructions in
             try await stub.respond(prompt, instructions)
         }
     }

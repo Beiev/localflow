@@ -57,6 +57,9 @@ public enum TextSafety {
         }
     }
     private static let numberPattern = #"[+−-]?\d+(?:[.,]\d+|[ \u00a0\u202f]\d{3}(?!\d))*"#
+    /// The numeric tokens a text carries, normalized. Exposed so a summary can be checked for
+    /// numbers it invented: a figure that is not in the transcript was not said.
+    public static func numberTokens(_ text: String) -> [String] { numbers(text) }
     private static func numbers(_ text: String) -> [String] {
         matches(numberPattern, text).map { value in
             let compact = value.replacingOccurrences(of: #"[ \u00a0\u202f]"#, with: "", options: .regularExpression)

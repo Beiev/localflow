@@ -17,7 +17,13 @@ public enum RichBlock: Equatable, Sendable {
 public enum RichText {
     /// A standalone fully-bold line is a heading in everything but syntax, and that is exactly
     /// what the model writes for its sections.
-    private static let boldOnlyLine = #"^\*\*([^*][^\n]*?)\*\*[:：]?$"#
+    /// A trailing dash or colon after the bold run is still just a section title: one summary in
+    /// the archive writes every heading as `**Состояние и цифры** —` with the bullets below it.
+    private static let boldOnlyLine = #"^\*\*([^*][^\n]*?)\*\*\s*[—–\-:：]?\s*$"#
+    /// The same section title with its first sentence on the same line, separated by a dash or a
+    /// colon: `**О чём** — Обсуждение…`. One real summary in the archive is written this way
+    /// throughout, and reading it as prose lost all five of its sections.
+    private static let boldLeadLine = #"^\*\*([^*][^\n]*?)\*\*\s*[—–\-:]\s*(\S.*)$"#
     private static let headingMarker = #"^(#{1,6})\s+(.*)$"#
     private static let bulletMarker = #"^([-*+•·—])\s+(.*)$"#
     private static let orderedMarker = #"^(\d{1,3})[.)]\s+(.*)$"#
@@ -72,6 +78,12 @@ public enum RichText {
             // first sentence on consecutive lines with no blank line between them.
             if let bold = capture(boldOnlyLine, in: line)?.first {
                 flush(); blocks.append(.heading(level: 3, text: bold))
+                index += 1; continue
+            }
+            if let parts = capture(boldLeadLine, in: line), parts.count == 2 {
+                flush()
+                blocks.append(.heading(level: 3, text: parts[0]))
+                paragraph.append(parts[1])
                 index += 1; continue
             }
             flushQuote()
@@ -170,6 +182,15 @@ public struct TimeReference: Equatable, Sendable {
 public extension RichText {
     /// `[12:34]` and `[1:02:03]`. Minutes are not capped at 59: an 88-minute call writes `[87:36]`.
     static let timePattern = #"\[(\d{1,3}):([0-5]\d)(?::([0-5]\d))?\]"#
+
+    /// A bracketed bare number such as `[134]`: an attempted citation that came out as raw seconds
+    /// and cannot be opened. Counted so a document cannot look perfectly cited by failing silently.
+    static let malformedTimePattern = #"\[\s*\d{1,5}\s*\]"#
+
+    static func malformedTimeReferences(in text: String) -> Int {
+        guard let regex = try? NSRegularExpression(pattern: malformedTimePattern) else { return 0 }
+        return regex.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))
+    }
 
     static func timeReferences(in text: String) -> [TimeReference] {
         guard let regex = try? NSRegularExpression(pattern: timePattern) else { return [] }

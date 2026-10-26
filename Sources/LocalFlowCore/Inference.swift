@@ -91,9 +91,12 @@ public actor TextEngine {
             throw error
         }
     }
-    public func edit(_ text: String, mode: ProcessingMode, dictionary: [DictionaryEntry], style: String = "") async throws -> EditResult {
-        let kvSize = mode.condenses ? Self.condensingKVSize : Self.editingKVSize
-        return try await EditPlan.run(text: text, mode: mode, dictionary: dictionary, style: style) { [self] prompt, instructions in
+    public func edit(_ text: String, mode: ProcessingMode, dictionary: [DictionaryEntry], style: String = "",
+                     strategy: EditPlan.SummaryStrategy = .structured, screen: [ScreenMoment] = []) async throws -> EditResult {
+        // The structured path reads a few minutes of conversation per call, so it no longer needs
+        // the large cache the single whole-meeting pass did.
+        let kvSize = mode.condenses && !(mode == .summary && strategy == .structured) ? Self.condensingKVSize : Self.editingKVSize
+        return try await EditPlan.run(text: text, mode: mode, dictionary: dictionary, style: style, strategy: strategy, screen: screen) { [self] prompt, instructions in
             try await response(prompt, instructions: instructions, kvSize: kvSize)
         }
     }
