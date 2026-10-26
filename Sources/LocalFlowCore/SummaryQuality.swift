@@ -269,8 +269,14 @@ public enum SummaryQuality {
         // A figure or a person. "Было решено сделать что-то нормальное" passed the first version
         // of this check on the strength of "решено" alone, which is how a generic opening slipped
         // through: saying that something was settled is not saying what.
-        if !TextSafety.numberTokens(opening).isEmpty { return true }
-        let value = opening.lowercased()
+        // Not the document's own counts. "Решения: 5. Задачи: 7. Открытые вопросы: 3." used to
+        // stand under every opening paragraph and satisfied this check by itself, which is why
+        // every meeting in the archive reported a specific opening: the digits were the document
+        // describing itself, not the conversation. The counts are gone from the opening now, and
+        // the test no longer accepts them if they come back.
+        let claims = opening.replacingOccurrences(of: assembledCounts, with: " ", options: .regularExpression)
+        if !TextSafety.numberTokens(claims).isEmpty { return true }
+        let value = claims.lowercased()
         return speakers.contains { speaker in
             let known = speaker.lowercased()
             return known.count > 2 && known != RecordingSession.ownerIdentity.lowercased() && value.contains(known)

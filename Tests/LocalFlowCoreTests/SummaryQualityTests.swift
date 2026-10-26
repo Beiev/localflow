@@ -163,6 +163,24 @@ final class SummaryNumberCoverageTests: XCTestCase {
     }
 }
 
+final class SummaryOpeningSpecificityTests: XCTestCase {
+    /// The document's own counts are the document describing itself, not the conversation. They
+    /// used to stand under every opening paragraph and satisfied this check by themselves, which
+    /// is why every meeting in the archive reported a specific opening.
+    func testTheDocumentsOwnCountsDoNotMakeAnOpeningSpecific() {
+        let generic = "Было решено сделать что-то нормальное и двигаться дальше по плану работы."
+        XCTAssertFalse(SummaryQuality.isSpecific(generic, speakers: ["Макс"]))
+        XCTAssertFalse(SummaryQuality.isSpecific(generic + " Решения: 5. Задачи: 7. Открытые вопросы: 3.",
+                                                 speakers: ["Макс"]))
+    }
+    func testAFigureOrAPersonStillMakesItSpecific() {
+        XCTAssertTrue(SummaryQuality.isSpecific("Удержание просело до тридцати процентов, порог поднимают до 2000.",
+                                                speakers: ["Макс"]))
+        XCTAssertTrue(SummaryQuality.isSpecific("Макс и Лена договорились перенести запуск на следующую неделю.",
+                                                speakers: ["Макс", "Лена"]))
+    }
+}
+
 final class SummarySourceSpeechTests: XCTestCase {
     /// The scaffolding of a transcript line carries digits of its own: the clock, and a diarizer
     /// label like "Участник 1". Counting those made a summary that says "Участник 1: сделать
