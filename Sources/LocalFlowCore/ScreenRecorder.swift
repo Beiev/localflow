@@ -48,7 +48,11 @@ public final class ScreenRecorder: NSObject, SCStreamOutput, @unchecked Sendable
             }
         }
     }
-    public func pause(_ value: Bool) { queue.sync { self.paused = value } }
+    /// Asynchronous on purpose. Recognition runs on this queue and takes as long as a frame of
+    /// somebody's screen takes, so waiting for it put that wait on whoever asked — and the one
+    /// caller is the main thread, pausing a recording. A frame already in flight is allowed to
+    /// finish; what it produces was on screen before the pause.
+    public func pause(_ value: Bool) { queue.async { self.paused = value } }
     public func stop() { queue.sync { self.session = nil } }
 
     /// What was read, assembled into moments. Called after the recording stops.

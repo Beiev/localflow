@@ -56,6 +56,9 @@ public enum ScreenReader {
 
     /// Lines of text on a frame, top to bottom as laid out. Returns nothing rather than throwing
     /// when recognition is unavailable: a meeting must never fail because the screen was unreadable.
+    /// How far apart two pieces of text can be vertically and still read as one line.
+    static let lineBand = 0.02
+
     public static func read(_ buffer: CVPixelBuffer, languages: [String]) -> [String] {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
@@ -66,9 +69,12 @@ public enum ScreenReader {
               let found = request.results as? [VNRecognizedTextObservation] else { return [] }
         // Reading order, not confidence order: a document read out of order is unusable.
         return found
+            // By band, not by distance. "Within 0.01 of each other counts as the same line" is
+            // not a strict weak ordering — three lines 0.008 apart give A before C, C before B
+            // and B before A — and Swift's sort is free to scramble a comparator like that.
             .sorted { first, second in
-                let top = 1 - first.boundingBox.maxY, otherTop = 1 - second.boundingBox.maxY
-                return abs(top - otherTop) > 0.01 ? top < otherTop : first.boundingBox.minX < second.boundingBox.minX
+                func key(_ box: CGRect) -> (Int, Double) { (Int((1 - box.maxY) / lineBand), box.minX) }
+                return key(first.boundingBox) < key(second.boundingBox)
             }
             .compactMap { $0.topCandidates(1).first?.string }
     }

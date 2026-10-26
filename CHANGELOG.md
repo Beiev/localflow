@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.4.1 — 2026-10-26
+
+- Read a meeting as topics rather than as four lists. A fourth stage groups the assertions that survived into the stretches of conversation they came from — contiguous, by time and by shared wording — and the model is allowed one thing it is good at: naming a group it is shown, in two to four words. Each topic is rendered as a passage assembled in code, what was settled first and then what was measured, every sentence carrying the moment it came from. A group the model fails to name is headed by when it happened. One topic means the whole conversation, so the document stays as it was.
+- Keep the tabs and the copy button in reach. They scrolled away with the text, so switching from the summary to the transcript on a long meeting meant scrolling back to the top first. Hold the text to a readable column while there: a meeting was running the full width of the window.
+- Add the follow-up letter: the meeting as a message to the people who were in it — topics, the task table as lines, and what nobody answered — assembled from the document that already exists, without citations and without a model call. In the copy menu.
+- Drop a question somebody answered. "Открытые вопросы" was listing everything the model labelled a question, including the ones answered two turns later.
+- Spread a section's cap over the recording. Most decisions weigh the same, equal weights were broken by who spoke first, and a long call therefore kept twelve decisions from its opening stretch and none of the ones it ended on. Where the cap still has to choose, it now also counts how much of the room's time went to each point.
+
+### Found by a second model's review of 0.4.0, and fixed
+
+- Stop merging a correction into what it corrected. Word overlap cannot see a figure, and "не" is a stop word, so "лимит десять тысяч" and "лимит двадцать тысяч" — and "решили запускать" and "решили не запускать" — read as the same point, and merging kept the earlier one. Two assertions are now the same point only if they carry the same figures and the same polarity.
+- Stop handing a task's owner and deadline to a different task. The index of a merged twin is an index into the kept list, and a line too short to carry a signature was kept without one, after which the two lists were out of step.
+- Let nothing read off a screen become a decision or a task. A board reading "Утвердили перенос" is not a decision the meeting took. An observation citing a screen moment is still allowed, and screen text now reaches the model with the prompt's own markers neutralised, so a window containing `</экран>` cannot close the block it was placed in. At most three moments of screen per window: twenty-eight of them came to 36 898 characters, at which point the instructions are what falls out of the context.
+- Match a task's owner whole instead of by prefix. A task for Александр went to Александра, "Яна" resolved to the microphone track's own "Я", and "Соб" resolved to "Собеседник" — the label the guard exists to refuse.
+- Stop a price from becoming a task. "Тариф стоит двадцать долларов" has an intention marker in it and, because Russian numerals end the way infinitives do, an apparent action as well.
+- Read a line the model wrapped in pipes. `| ФАКТ | … | u1 |` has an empty first field and cost the window every record it found.
+- Give a slide left alone the time it was actually up. Only a changed frame is journalled, so a slide nobody touched produced a moment that ended where it began, invisible to every stretch of conversation that happened while it was on screen.
+- Order recognised text by band rather than by distance. "Within 0.01 counts as the same line" is not a strict weak ordering, and a staggered table came out scrambled.
+- Do not wait for recognition when pausing. Pause ran on the screen queue, where a frame is recognised, and the caller is the main thread.
+- Keep a damaged screen journal. One byte lost to a power cut made the strict decoder return nothing, throwing away the whole journal rather than the one line it damaged.
+- Say what the screen feature reads: the whole display minus LocalFlow's own windows, not only the call's window. Copying a whole meeting now carries the window titles and the times, never the text read off them.
+
 ## 0.4.0 — 2026-10-26
 
 - Read the shared screen during a meeting, off by default. A second output on the ScreenCaptureKit stream that already carries system audio, with its own queue so recognition never sits in front of an audio buffer: one frame every three seconds, reduced to a 16×16 thumbnail, and only a frame that differs from the last one *read* is recognized. What is kept is the text and the window title — never video, never the frames. The app's own windows are excluded from the picture, the capture pauses with the recording, and the journal is removed with the session's audio.

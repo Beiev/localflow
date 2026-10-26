@@ -64,8 +64,22 @@ final class ScreenContextTests: XCTestCase {
         ]
         let moments = ScreenContext.moments(samples)
         XCTAssertEqual(moments.count, 2)
-        XCTAssertEqual(moments[0].end, 5)
+        XCTAssertEqual(moments[0].end, 10, "первый экран был на виду, пока его не сменил второй")
         XCTAssertEqual(moments[1].start, 10)
+    }
+    /// Only a frame that differs from the last one read is journalled, so a slide nobody touched
+    /// produces one sample. Ending its moment where it began hid it from every stretch of
+    /// conversation that happened while it was up — which is the whole point of reading it.
+    func testASlideLeftAloneLastsUntilSomethingReplacesIt() {
+        let samples = [
+            ScreenSample(time: 0, app: "Keynote", window: "Deck", lines: ["Пороги и тарифы", "Базовый уровень"]),
+            ScreenSample(time: 300, app: "Safari", window: "Pricing", lines: ["Pricing", "Base tier", "Mid tier"]),
+        ]
+        let moments = ScreenContext.moments(samples)
+        XCTAssertEqual(moments.count, 2)
+        XCTAssertEqual(moments[0].start, 0)
+        XCTAssertEqual(moments[0].end, 300)
+        XCTAssertEqual(moments[0].duration, 300)
     }
     func testDifferentTextInTheSameWindowStartsANewMoment() {
         let samples = [

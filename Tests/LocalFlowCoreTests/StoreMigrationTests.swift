@@ -159,3 +159,74 @@ final class SessionShapeCompatibilityTests: XCTestCase {
         XCTAssertNil(session.expectedRemoteSpeakers)
     }
 }
+
+/// The meeting as a message to the people who were in it, assembled from the document that
+/// already exists.
+final class FollowUpLetterTests: XCTestCase {
+    private func meeting(_ summary: String) -> RecordingSession {
+        var session = RecordingSession(kind: .meeting)
+        session.title = "Планы на неделю"
+        session.speakers = ["s1": "Макс", "s2": "Лена", "microphone": RecordingSession.ownerIdentity]
+        session.versions = [TextVersion(mode: .summary, text: summary)]
+        return session
+    }
+
+    func testTheLetterCarriesTopicsTasksAndQuestionsWithoutCitations() {
+        let letter = meeting("""
+        ## О чём
+
+        Участники: Макс, Лена. Решения: 1. Задачи: 1. Открытые вопросы: 1.
+
+        ## Разбор по темам
+
+        ### Пороги и тарифы
+
+        Поднимаем первый порог до двух тысяч [01:10]. Удержание тридцать процентов [00:10].
+
+        ## Задачи
+
+        | Кто | Что | Срок |
+        |---|---|---|
+        | Лена | Перенести домен [12:30] | пятница |
+        | не назван | Собрать структуру сайта [11:07] | — |
+
+        ## Открытые вопросы
+
+        - Чем закрывать просевшее удержание [29:21]
+        """).followUpLetter
+        XCTAssertTrue(letter.hasPrefix("Итоги созвона «Планы на неделю» · "), letter)
+        XCTAssertTrue(letter.contains("Участники: Лена, Макс"))
+        XCTAssertTrue(letter.contains("• Пороги и тарифы — Поднимаем первый порог до двух тысяч."), letter)
+        XCTAssertTrue(letter.contains("• Лена — Перенести домен (срок: пятница)"), letter)
+        XCTAssertTrue(letter.contains("• не назван — Собрать структуру сайта"), letter)
+        XCTAssertFalse(letter.contains("(срок: —)"), "пустой срок не печатается")
+        XCTAssertTrue(letter.contains("Осталось без ответа:"))
+        XCTAssertNil(letter.range(of: RichText.timePattern, options: .regularExpression),
+                     "отметки времени бесполезны тому, у кого нет записи")
+    }
+    /// A document from before the topic stage has flat sections, and the letter is built from
+    /// whichever shape the summary has.
+    func testALetterIsStillBuiltFromAFlatSummary() {
+        let letter = meeting("""
+        **О чём**
+
+        Короткий разговор о порогах.
+
+        **Решения**
+
+        - Поднимаем первый порог до двух тысяч [01:10]
+
+        **Задачи**
+
+        - Участник 1: Перенести домен [12:30]
+        """).followUpLetter
+        XCTAssertTrue(letter.contains("Решили:"))
+        XCTAssertTrue(letter.contains("• Поднимаем первый порог до двух тысяч"))
+        XCTAssertFalse(letter.contains("[01:10]"))
+    }
+    func testAMeetingWithNoSummaryHasNoLetter() {
+        var session = RecordingSession(kind: .meeting)
+        session.title = "Без конспекта"
+        XCTAssertTrue(session.followUpLetter.isEmpty)
+    }
+}

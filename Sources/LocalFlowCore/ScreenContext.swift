@@ -107,6 +107,14 @@ public enum ScreenContext {
                 if text.count > open.text.count { open.text = text }
                 moments[moments.count - 1] = open
             } else {
+                // The screen that was up stayed up until this one replaced it. Only a frame that
+                // differs from the last one read is journalled, so a slide left alone produces
+                // exactly one sample — and a moment that ended the instant it began was invisible
+                // to every stretch of conversation that happened while it was on screen.
+                if var previous = moments.last, previous.end < sample.time {
+                    previous.end = min(sample.time, previous.start + longestMoment)
+                    moments[moments.count - 1] = previous
+                }
                 moments.append(ScreenMoment(start: sample.time, end: sample.time,
                                             app: sample.app, window: sample.window, text: text))
             }
@@ -164,7 +172,11 @@ public enum ScreenFiles {
 
     /// Reads the journal, skipping any line a crash left half-written.
     public static func samples(_ id: UUID) -> [ScreenSample] {
-        guard let data = try? Data(contentsOf: journal(id)), let text = String(data: data, encoding: .utf8) else { return [] }
+        // Decoded leniently: one byte of a multi-byte character lost to a power cut made the
+        // strict decoder return nothing at all, throwing away a whole meeting's screen journal
+        // rather than the one line it damaged.
+        guard let data = try? Data(contentsOf: journal(id)) else { return [] }
+        let text = String(decoding: data, as: UTF8.self)
         let decoder = JSONDecoder()
         return text.components(separatedBy: "\n").compactMap { line in
             guard !line.isEmpty, let row = line.data(using: .utf8) else { return nil }

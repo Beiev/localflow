@@ -63,7 +63,7 @@ public enum SummaryQuality {
     /// The five sections the condensed document is asked for, recognized by what the heading says
     /// rather than by position: a merged document does not always keep the order.
     public enum Section: String, CaseIterable, Sendable {
-        case opening, facts, decisions, tasks, questions
+        case opening, facts, decisions, tasks, questions, topics
         var keywords: [String] {
             switch self {
             case .opening: ["о чём", "о чем", "суть", "главное", "итог"]
@@ -71,6 +71,7 @@ public enum SummaryQuality {
             case .decisions: ["решени", "договорил"]
             case .tasks: ["задач", "действи", "кто что"]
             case .questions: ["вопрос", "открыт"]
+            case .topics: ["по темам", "разбор по"]
             }
         }
         static func match(_ heading: String) -> Section? {
@@ -88,6 +89,8 @@ public enum SummaryQuality {
     ]
     /// A decision is a choice that was made. These say so.
     static let settledMarkers = ["договорил", "решили", "решено", "выбрал", "отказал", "утвердил", "остановились", "согласовал"]
+    /// The counts the deterministic opening carries. They are the document counting itself.
+    static let assembledCounts = #"(?:Решения|Задачи|Открытые вопросы):\s*\d+"#
     /// Diarizer labels. A task handed to one of these has no owner.
     static let genericOwner = #"(?:Участник\s*\d+|Собеседник|Спикер\s*\d+|Говорящий\s*\d+)"#
     /// Below this, two bullets are different points; at or above it they are the same point twice.
@@ -112,6 +115,10 @@ public enum SummaryQuality {
         // Figures inside a citation are the clock, not a claim.
         var claims = summary
         for reference in references.reversed() { claims.replaceSubrange(reference.range, with: " ") }
+        // So are the counts the opening is assembled with. "Решения: 2. Задачи: 0." says something
+        // about the document, not about the conversation, and counting those as figures nobody
+        // said made an assembled opening look like a document that invents numbers.
+        claims = claims.replacingOccurrences(of: assembledCounts, with: " ", options: .regularExpression)
         let summaryNumbers = TextSafety.numberTokens(claims)
         score.numbers = summaryNumbers.count
         score.groundedNumbers = summaryNumbers.filter { sourceNumbers.contains($0) }.count
@@ -122,7 +129,13 @@ public enum SummaryQuality {
         var opening: [String] = []
         for block in RichText.blocks(summary) {
             switch block {
-            case .heading(_, let text):
+            case .heading(let level, let text):
+                // Inside the topic section its own headings name topics, not sections: "Решение
+                // по подрядчику" is a topic, and reading it as the decisions section would hand
+                // every later statement to the wrong counter. A legacy summary writes its section
+                // headings in bold, which parse as level three, so only the topic section is
+                // allowed to swallow a subheading this way.
+                if section == .topics, level > 2 { break }
                 section = Section.match(text)
                 if let section { score.sections.insert(section.rawValue) }
             case .bullet(_, _, let text):
@@ -130,6 +143,10 @@ public enum SummaryQuality {
                 bulletsBySection[section, default: []].append(RichText.inline(text))
             case .paragraph(let text):
                 if section == .opening || section == nil { opening.append(RichText.inline(text)) }
+                // A topic is a passage of several statements in one paragraph, and every count
+                // below is about statements, so it is read back into the sentences it was
+                // assembled from rather than counted as one long bullet.
+                else if section == .topics { bulletsBySection[.topics, default: []] += sentences(RichText.inline(text)) }
                 else if let section { bulletsBySection[section, default: []].append(RichText.inline(text)) }
             case .table(_, let rows):
                 guard let section else { continue }
@@ -162,11 +179,19 @@ public enum SummaryQuality {
             let head = String(value.prefix(40))
             return markers.contains { head.contains($0) }
         }
+        // "стоит" opens a plan and a price alike — "стоит перенести запуск" against "тариф стоит
+        // двадцать долларов" — and a measurement with nothing to do in it is not a misfiled plan.
+        // This is the same test the filing stage applies, so the two agree by construction: the
+        // count below is a residual, not an independent opinion.
+        guard StructuredSummary.hasAction(bullet) else { return false }
         switch section {
         case .facts:
             // A measurement carries a figure. An intention carries a verb of wanting.
             return starts(intentionMarkers) && !starts(settledMarkers)
-        case .decisions:
+        // A topic passage holds the same statements the two sections above would have held, so it
+        // is held to the same rule: a sentence that only wants something done belonged in the task
+        // table, and the routing stage was supposed to have put it there.
+        case .decisions, .topics:
             return starts(intentionMarkers) && !starts(settledMarkers)
         case .opening, .tasks, .questions:
             return false
@@ -198,6 +223,25 @@ public enum SummaryQuality {
         "надо", "нужно", "нам", "мне", "вам", "нас", "его", "всё", "все", "есть", "быть", "может",
         "выглядит", "кажется", "давай", "давайте", "просто", "вообще", "конечно", "короче",
     ]
+    /// Splits a passage into the statements it was assembled from. A full stop that closes
+    /// nothing — an initial, an abbreviation — does not end a sentence.
+    static func sentences(_ text: String) -> [String] {
+        var found: [String] = []
+        var current = ""
+        for character in text {
+            current.append(character)
+            guard character == "." || character == "!" || character == "?" else { continue }
+            let statement = current.trimmingCharacters(in: .whitespaces)
+            if statement.count >= 3 {
+                found.append(statement)
+                current = ""
+            }
+        }
+        let tail = current.trimmingCharacters(in: .whitespaces)
+        if !tail.isEmpty { found.append(tail) }
+        return found.isEmpty ? [text] : found
+    }
+
     static func tokens(_ text: String) -> Set<String> {
         let stripped = text.replacingOccurrences(of: RichText.timePattern, with: " ", options: .regularExpression)
             .lowercased()

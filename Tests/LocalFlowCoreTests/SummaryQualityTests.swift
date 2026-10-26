@@ -184,3 +184,73 @@ final class SummarySourceSpeechTests: XCTestCase {
         XCTAssertEqual(SummaryQuality.speech(of: "просто текст без отметок"), "просто текст без отметок")
     }
 }
+
+/// The metric reading a document built from topics rather than from flat sections.
+final class SummaryQualityTopicTests: XCTestCase {
+    private let source = """
+    [00:10] Паша: Удержание тридцать процентов, из четырёх заявок три закрыли.
+    [01:10] Лена: Поднимаем первый порог до двух тысяч.
+    [12:30] Паша: Домен переносим на новый тариф, платим до пятницы.
+    """
+    private let document = """
+    ## О чём
+
+    Участники: Паша, Лена. Решения: 2. Задачи: 0. Открытые вопросы: 0.
+
+    ## Разбор по темам
+
+    ### Удержание и заявки
+
+    Поднимаем первый порог до двух тысяч [01:10]. Удержание тридцать процентов [00:10]. Из четырёх заявок три закрыли [00:10].
+
+    ### Хостинг и домен
+
+    Домен переносим на новый тариф [12:30]. Платим до пятницы [12:30].
+    """
+
+    func testEachStatementInAPassageIsCountedSeparately() {
+        let score = SummaryQuality.score(document, source: source, duration: 800, speakers: ["Паша", "Лена"])
+        XCTAssertTrue(score.sections.contains("topics"))
+        XCTAssertEqual(score.bullets, 5, "пять утверждений, а не два абзаца")
+        XCTAssertEqual(score.citations, score.resolvableCitations)
+        XCTAssertEqual(score.numberFidelity, 1, "цифры из разговора, а не выдуманные")
+    }
+    /// A topic's own heading names a topic. Read as a section heading it would hand every later
+    /// statement to the wrong counter — "Решение по подрядчику" is a topic, not the decisions.
+    func testATopicHeadingDoesNotSwitchSections() {
+        let risky = document.replacingOccurrences(of: "### Хостинг и домен", with: "### Решение по домену")
+        let score = SummaryQuality.score(risky, source: source, duration: 800, speakers: ["Паша", "Лена"])
+        XCTAssertEqual(score.sections, ["opening", "topics"])
+        XCTAssertEqual(score.bullets, 5)
+    }
+    /// A passage is not the opening: the opening check has to stay about the opening.
+    func testPassagesDoNotLeakIntoTheOpening() {
+        let score = SummaryQuality.score(document, source: source, duration: 800, speakers: ["Паша", "Лена"])
+        XCTAssertTrue(score.openingIsSpecific)
+        let anonymous = document.replacingOccurrences(of: "Участники: Паша, Лена. Решения: 2. Задачи: 0. Открытые вопросы: 0.",
+                                                      with: "Обсудили текущую ситуацию и договорились о дальнейших шагах.")
+        XCTAssertFalse(SummaryQuality.score(anonymous, source: source, duration: 800).openingIsSpecific,
+                       "абзацы тем не делают пустое вступление конкретным")
+    }
+    /// A legacy summary writes its section headings in bold, which parse as level three. The rule
+    /// that lets a topic keep its subheadings must not stop those from switching sections.
+    func testBoldHeadingsOfAnArchivedSummaryStillSwitchSections() {
+        let legacy = """
+        **О чём**
+
+        Короткий разговор о порогах и удержании с Пашей.
+
+        **Решения**
+
+        - Поднимаем первый порог до двух тысяч [01:10]
+
+        **Задачи**
+
+        - Участник 1: Перенести домен [12:30]
+        """
+        let score = SummaryQuality.score(legacy, source: source, duration: 800, speakers: ["Паша", "Лена"])
+        XCTAssertEqual(score.sections, ["opening", "decisions", "tasks"])
+        XCTAssertEqual(score.tasks, 1)
+        XCTAssertEqual(score.tasksWithGenericOwner, 1)
+    }
+}

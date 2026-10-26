@@ -148,13 +148,91 @@ public struct RecordingSession: Codable, Identifiable, Sendable {
             return "### \(moment.timestamp) \(where_.isEmpty ? moment.title : where_)\n\n\(moment.text)"
         }.joined(separator: "\n\n")
     }
+    /// The meeting as a message to the people who were in it: what each topic came to, who is
+    /// doing what, and what nobody answered.
+    ///
+    /// Assembled from the document that already exists, so there is no model call and nothing in
+    /// it that is not in the summary. Citations are dropped — a reader somewhere else cannot play
+    /// your recording — and so is anything read off a screen.
+    public var followUpLetter: String {
+        guard let summary else { return "" }
+        var topics: [(name: String, body: String)] = []
+        var decisions: [String] = []
+        var tasks: [[String]] = []
+        var questions: [String] = []
+        var section: String?
+        var topicName: String?
+        func clean(_ text: String) -> String {
+            RichText.inline(text)
+                .replacingOccurrences(of: RichText.timePattern, with: "", options: .regularExpression)
+                .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                .replacingOccurrences(of: " .", with: ".")
+                .trimmingCharacters(in: .whitespaces)
+        }
+        for block in RichText.blocks(summary.text) {
+            switch block {
+            case .heading(let level, let text):
+                // Inside the topic section a subheading names a topic, whatever words it uses.
+                if section == "topics", level > 2 { topicName = clean(text); continue }
+                let value = text.lowercased()
+                if value.contains("по темам") { section = "topics"; topicName = nil }
+                else if value.contains("задач") { section = "tasks" }
+                else if value.contains("вопрос") { section = "questions" }
+                else if value.contains("решени") || value.contains("договорил") { section = "decisions" }
+                else { section = nil }
+            case .paragraph(let text):
+                guard section == "topics", let name = topicName else { continue }
+                topics.append((name, clean(text)))
+                topicName = nil
+            case .bullet(_, _, let text):
+                if section == "questions" { questions.append(clean(text)) }
+                else if section == "decisions" { decisions.append(clean(text)) }
+            case .table(_, let rows):
+                if section == "tasks" { tasks += rows }
+            case .quote, .divider:
+                continue
+            }
+        }
+        var parts = ["Итоги созвона «\(title)» · " + createdAt.formatted(date: .long, time: .shortened)]
+        let people = speakers.values.filter { !$0.isEmpty && $0 != Self.ownerIdentity }.sorted()
+        if !people.isEmpty { parts.append("Участники: " + people.joined(separator: ", ")) }
+        if !topics.isEmpty {
+            parts.append("Обсудили:\n" + topics.map { "• \($0.name) — \($0.body)" }.joined(separator: "\n"))
+        }
+        if !decisions.isEmpty {
+            parts.append("Решили:\n" + decisions.map { "• " + $0 }.joined(separator: "\n"))
+        }
+        if !tasks.isEmpty {
+            parts.append("Задачи:\n" + tasks.compactMap { row -> String? in
+                guard row.count >= 2 else { return nil }
+                let owner = clean(row[0]), what = clean(row[1])
+                guard !what.isEmpty else { return nil }
+                let due = row.count >= 3 ? clean(row[2]) : ""
+                let when = due.isEmpty || due == "—" || due == "-" ? "" : " (срок: \(due))"
+                return "• \(owner.isEmpty ? "не назван" : owner) — \(what)\(when)"
+            }.joined(separator: "\n"))
+        }
+        if !questions.isEmpty {
+            parts.append("Осталось без ответа:\n" + questions.map { "• " + $0 }.joined(separator: "\n"))
+        }
+        return parts.joined(separator: "\n\n")
+    }
+
+    /// Just when each screen was up and what window it was, without a word of what it said.
+    public var screenTitles: String {
+        screen.map { "- \($0.title) \($0.timestamp)" }.joined(separator: "\n")
+    }
+
     /// Summary, transcript and what was shown in one Markdown document, for pasting a whole
     /// meeting somewhere else.
     public var shareableDocument: String {
         var parts = ["# \(title)", durationLine]
         if let summary { parts.append(contentsOf: ["## Конспект", summary.text]) }
         parts.append(contentsOf: ["## Расшифровка", cleanTranscript?.text ?? referencedText])
-        if !screen.isEmpty { parts.append(contentsOf: ["## Что показывали", screenDocument]) }
+        // Deliberately not the screen text. What was read off the display goes out only when it
+        // is asked for by itself: a document pasted into a chat should not carry everything that
+        // happened to be on the owner's screen during the call.
+        if !screen.isEmpty { parts.append(contentsOf: ["## Что показывали", screenTitles]) }
         return parts.filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
     private var durationLine: String {

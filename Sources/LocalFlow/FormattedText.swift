@@ -29,10 +29,12 @@ struct FormattedText: View {
     @ViewBuilder private func view(for block: RichBlock) -> some View {
         switch block {
         case .heading(let level, let text):
+            // A summary is read by scanning for its sections, so a heading is given room above it
+            // and full contrast. A level-three heading is a topic in a new document and a section
+            // in an archived one — in both it is a thing to scan for, not a dimmed label.
             Text(inline(text))
                 .font(level <= 1 ? .title2.bold() : level == 2 ? .title3.bold() : .headline)
-                .foregroundStyle(level <= 2 ? .primary : Color.primary.opacity(0.85))
-                .padding(.top, level <= 2 ? 12 : 8)
+                .padding(.top, level <= 2 ? 18 : 10)
         case .paragraph(let text):
             Text(inline(text)).lineSpacing(5).frame(maxWidth: .infinity, alignment: .leading)
         case .bullet(let indent, let marker, let text):

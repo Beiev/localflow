@@ -311,10 +311,39 @@ struct SessionView: View {
         }
     }
 
+    /// Long lines are hard to read. The note page already holds itself to a column; a meeting,
+    /// which is longer than any note, was running the full width of the window.
+    private static let readingWidth: CGFloat = 820
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Pinned: with the tabs inside the scroll, a long summary put the switch between
+            // "Конспект" and "Расшифровка" — and the copy button — out of reach until you
+            // scrolled back to the top.
+            VStack(alignment: .leading, spacing: 14) {
+                header
+                toolbar
+            }
+            // Padded inside the column, like the text below it, so the title lines up with the
+            // first line of the document rather than sitting 28 points to the left of it.
+            .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 14)
+            .frame(maxWidth: Self.readingWidth, alignment: .leading)
+            .frame(maxWidth: .infinity)
+            .background(.bar)
+            Divider()
+            scrollingContent
+        }
+        .frame(minWidth: 460, maxWidth: .infinity)
+        .onAppear { newTitle = current.title }
+        .onChange(of: current.versions.count) { _, _ in if pane == nil || !panes.contains(selected) { pane = panes.first } }
+        .confirmationDialog("Удалить запись, текст и аудио?", isPresented: $deletePrompt) {
+            Button("Удалить запись", role: .destructive) { model.delete(current) }
+        }
+    }
+
+    private var scrollingContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                header
                 if let error = current.error {
                     Label(error, systemImage: "exclamationmark.circle").font(.callout).foregroundStyle(.orange)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -324,17 +353,14 @@ struct SessionView: View {
                     HStack(spacing: 10) { ProgressView().controlSize(.small); Text(model.status).font(.callout).foregroundStyle(.secondary) }
                 }
                 if isMeeting { ParticipantsView(model: model, session: current, compact: true) }
-                toolbar
                 content
                 footer
                 Divider()
                 ArchiveQuestionView(model: model, session: current)
-            }.padding(28)
-        }.frame(minWidth: 460, maxWidth: .infinity)
-        .onAppear { newTitle = current.title }
-        .onChange(of: current.versions.count) { _, _ in if pane == nil || !panes.contains(selected) { pane = panes.first } }
-        .confirmationDialog("Удалить запись, текст и аудио?", isPresented: $deletePrompt) {
-            Button("Удалить запись", role: .destructive) { model.delete(current) }
+            }
+            .padding(28)
+            .frame(maxWidth: Self.readingWidth, alignment: .leading)
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -408,6 +434,9 @@ struct SessionView: View {
                     Button("Скопировать конспект") { copy(summary.text, as: "Конспект скопирован") }
                 }
                 Button("Скопировать расшифровку") { copy(current.cleanTranscript?.text ?? current.referencedText, as: "Расшифровка скопирована") }
+                if isMeeting, current.summary != nil {
+                    Button("Скопировать письмо после созвона") { copy(current.followUpLetter, as: "Письмо скопировано") }
+                }
                 Divider()
                 Button("Скопировать конспект и расшифровку") { copy(current.shareableDocument, as: "Скопировано целиком") }
             } label: { Image(systemName: "chevron.down").font(.caption2) }

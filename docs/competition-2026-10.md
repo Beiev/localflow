@@ -44,6 +44,12 @@ What it does not buy: a narrative. The document is still a set of typed sections
 the conversation is not in it. That is the main remaining gap against the reference summary the
 owner approved, and it is the first item below.
 
+## Done since this was written (0.4.1, 26 October)
+
+Items 1, 4, 6 and 7 below shipped: a passage per topic, the follow-up letter, questions that were
+answered leaving the open list, and a section cap spread over the recording rather than over its
+opening stretch. They are kept here so the order they were decided in stays legible.
+
 ## What to do next, in order
 
 1. **A passage per topic.** A fourth stage over the assertions that already exist: group them by
