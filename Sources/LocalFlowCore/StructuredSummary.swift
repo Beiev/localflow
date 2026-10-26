@@ -478,7 +478,11 @@ public enum StructuredSummary {
         // адаптировать под формат" came back labelled ФАКТ and stood in the figures section as
         // though it were the state of something.
         case .fact:
-            if settled { return .fact }
+            // Nobody can be given "никто не хочет покупать средний тир" to do, and this test used
+            // to be made for a line labelled ЗАДАЧА only — so the same line labelled ФАКТ was
+            // promoted into the task table instead, because "хоч" is a word of wanting and
+            // "покупать" is an infinitive.
+            if settled || nothingToDoHere(text) { return .fact }
             return intended && hasAction(text) || opensWithAPlan(text) ? .task : .fact
         // A line with figures and nothing to do in it is a measurement: "если видео стоит 20
         // единиц, то второй стоит 3" came back labelled as a task.
@@ -487,7 +491,7 @@ public enum StructuredSummary {
         // Nobody can be given "никто не хочет покупать средний тир" to do. A line opening with a
         // negative pronoun describes the world, whatever label it arrived with.
         case .task:
-            if text.range(of: nothingToDo, options: .regularExpression) != nil { return .fact }
+            if nothingToDoHere(text) { return .fact }
             return hasAction(text) || text.range(of: firstPerson, options: .regularExpression) != nil ? .task : .fact
         case .decision, .question: return kind
         }
@@ -519,6 +523,10 @@ public enum StructuredSummary {
               word.count >= 5, !word.hasSuffix("сть"), !word.hasSuffix("рть") else { return false }
         return (word.hasSuffix("ть") || word.hasSuffix("ться") || word.hasSuffix("ти"))
             && text.range(of: nothingToDo, options: .regularExpression) == nil
+    }
+    /// A line opening with a negative pronoun describes the world, whatever label it arrived with.
+    static func nothingToDoHere(_ text: String) -> Bool {
+        text.range(of: nothingToDo, options: .regularExpression) != nil
     }
     static let nothingToDo = #"(?i)^\s*(?:никто|ничего|ничто|некому|нечего|никак)(?![\p{L}])"#
     static let numeralEnding = #"^(?:пять|девять|десять|\p{L}*надцать|двадцать|тридцать)$"#

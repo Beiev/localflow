@@ -132,6 +132,16 @@ final class StructuredSummaryRecordTests: XCTestCase {
         XCTAssertEqual(parse("РЕШЕНИЕ | Надо переносить запуск на следующую неделю | u2").first?.kind, .decision)
         XCTAssertEqual(parse("РЕШЕНИЕ | Договорились поднять первый порог в цене | u2").first?.kind, .decision)
     }
+    /// Nobody can be given "никто не хочет покупать средний тир" to do. The test used to be made
+    /// for a line labelled ЗАДАЧА only, so the very same line labelled ФАКТ was promoted into the
+    /// task table — "хочет" is a word of wanting and "покупать" is an infinitive — and it reached
+    /// the task table of a real 45-minute call.
+    func testALineThatAsksNothingOfAnybodyIsAFactWhateverItsLabel() {
+        for label in ["ФАКТ", "ЗАДАЧА"] {
+            let records = parse("\(label) | Никто не хочет покупать ни средний тир, ни топовый | u1")
+            XCTAssertEqual(records.first?.kind, .fact, label)
+        }
+    }
     /// A line with figures and nothing to do in it is a measurement, however it was labelled.
     func testATaskWithNothingToDoInItBecomesAFact() {
         XCTAssertEqual(parse("ЗАДАЧА |  | Если первый вариант стоит 20 единиц, то второй стоит 3 | - | u1").first?.kind, .fact)
