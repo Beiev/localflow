@@ -624,8 +624,9 @@ final class StructuredSummaryTopicTests: XCTestCase {
             record(.decision, "Поднимаем первый порог до двух тысяч", "u3"),
             record(.task, "Перенести домен на новый тариф", "u4"),
             record(.question, "Чем закрывать просевшее удержание", "u2"),
+            record(.fact, "Второй порог никто не трогал с весны", "u3"),
         ]
-        let topics = [SummaryTopic(name: "Удержание", records: [records[0], records[1]])]
+        let topics = [SummaryTopic(name: "Удержание", records: [records[0], records[1], records[4]])]
         let document = StructuredSummary.assemble(records, topics: topics, opening: "Вступление.", material: material)
         XCTAssertTrue(document.contains("## По темам"))
         XCTAssertTrue(document.contains("### Удержание"))
@@ -651,6 +652,7 @@ final class StructuredSummaryTopicTests: XCTestCase {
         ]
         let topics = [SummaryTopic(name: "Удержание", records: [records[0], records[1]]),
                       SummaryTopic(name: "Разное", records: [records[2]])]
+        XCTAssertEqual(StructuredSummary.fewestTopicRecords, 2, "одно предложение под заголовком — это набивка")
         let document = StructuredSummary.assemble(records, topics: topics, opening: "Вступление.", material: material)
         XCTAssertTrue(document.contains("### Удержание"))
         XCTAssertFalse(document.contains("### Разное"), "корзина не тема")

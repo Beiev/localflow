@@ -1012,6 +1012,10 @@ public enum StructuredSummary {
         if !topics.isEmpty {
             var written: [String] = []
             for topic in topics where !binNames.contains(topic.name.lowercased()) {
+                // A heading over one sentence is padding, and longer than what it introduces:
+                // "### Хостинг и домен" over "Сайт не обязывает ничего хостить." Its statement
+                // falls through to the flat heading like any other that was not grouped.
+                guard topic.records.filter({ $0.kind == .fact }).count >= fewestTopicRecords else { continue }
                 let body = passage(topic, material: material)
                 guard !body.isEmpty else { continue }
                 written += ["### " + topic.name, body]
