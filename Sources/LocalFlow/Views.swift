@@ -30,7 +30,7 @@ struct OverlayView: View {
                 Circle().fill(model.isRecording && !model.isStarting ? Color.red : Color.white.opacity(0.55)).frame(width: 6, height: 6)
                 Text(model.status).font(.system(size: 11, weight: .medium)).lineLimit(2)
                 Spacer(minLength: 8)
-                Text(Duration.seconds(model.elapsed).formatted(.time(pattern: .minuteSecond)))
+                Text(RussianDates.length(model.elapsed))
                     .monospacedDigit().font(.system(size: 11)).foregroundStyle(.secondary)
             }
             RecordingWaveform(meter: model.recordingMeter, color: Color(red: 0.65, green: 0.78, blue: 1))
@@ -90,7 +90,6 @@ struct MainView: View {
             }.padding(20).navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 280)
         } detail: {
             VStack(spacing: 0) {
-                if model.callNoticed { noticedCallBar }
                 if model.isRecording || model.processing || model.isStarting { recordingBar }
                 Group {
                     if model.section == "settings" { SettingsView(model: model) }
@@ -115,32 +114,13 @@ struct MainView: View {
             Label(name, systemImage: icon).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8).padding(.horizontal, 10).contentShape(Rectangle())
         }.foregroundStyle(.primary)
     }
-    /// An offer, never an action: the microphone is busy somewhere and a calling application is
-    /// running, which is a guess, and a guess must not start recording somebody's conversation.
-    private var noticedCallBar: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "person.2.wave.2.fill").foregroundStyle(FlowTheme.accent)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Похоже, идёт созвон").font(.callout.weight(.semibold))
-                Text("Микрофон занят другим приложением. Запись не началась.").font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            Button("Не сейчас") { model.dismissNoticedCall() }.buttonStyle(.plain).foregroundStyle(.secondary)
-            Button("Записать · \(model.meetingLabel)") { model.recordNoticedCall() }
-                .buttonStyle(.borderedProminent).tint(FlowTheme.accent)
-        }
-        .padding(.horizontal, 20).padding(.vertical, 12)
-        .background(FlowTheme.accent.opacity(0.10))
-        .overlay(alignment: .bottom) { Divider() }
-    }
-
     private var recordingBar: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 if model.processing { Image(systemName: "sparkles").foregroundStyle(FlowTheme.accent) }
                 Text(model.status).fontWeight(.medium)
                 Spacer()
-                Text(Duration.seconds(model.elapsed).formatted(.time(pattern: .minuteSecond))).monospacedDigit()
+                Text(RussianDates.length(model.elapsed)).monospacedDigit()
                 if model.isRecording {
                     Button(model.paused ? "Продолжить" : "Пауза") { model.pause() }
                     Button("Завершить") { model.stop() }.buttonStyle(.borderedProminent)
@@ -172,16 +152,38 @@ struct MainView: View {
                     Spacer()
                 }.padding(.horizontal, 16).padding(.top, 20)
                 searchField.padding(.horizontal, 16)
+                ScrollViewReader { scroller in
                 ScrollView {
-                    VStack(spacing: 4) {
-                        ForEach(filteredSessions) { session in
-                            Button { model.selection = session.id } label: {
-                                SessionRow(session: session, selected: model.selection == session.id)
+                    LazyVStack(alignment: .leading, spacing: 4, pinnedViews: [.sectionHeaders]) {
+                        // By day, because 264 records in one run read as a dump. The two nearest
+                        // days are called by name; the rest by date.
+                        ForEach(archiveDays, id: \.label) { day in
+                            Section {
+                                ForEach(day.sessions) { session in
+                                    Button { model.selection = session.id } label: {
+                                        SessionRow(session: session, selected: model.selection == session.id)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.horizontal, 10)
+                                    .id(session.id)
+                                }
+                            } header: {
+                                Text(day.label)
+                                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                    .padding(.horizontal, 20).padding(.vertical, 6)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(.bar)
                             }
-                            .buttonStyle(.plain)
-                            .padding(.horizontal, 10)
                         }
                     }.padding(.vertical, 8)
+                }
+                // Up and down move through the archive, as they do in every list on this system.
+                .focusable()
+                .onMoveCommand { direction in
+                    guard let moved = neighbour(of: model.selection, direction: direction) else { return }
+                    model.selection = moved
+                    withAnimation(.easeOut(duration: 0.12)) { scroller.scrollTo(moved, anchor: .center) }
+                }
                 }
             }.frame(minWidth: 250, idealWidth: 300, maxWidth: 370)
             if let session = model.selectedSession {
@@ -191,6 +193,29 @@ struct MainView: View {
             else { archiveEmpty }
         }
     }
+    /// The record above or below the selected one, in the order the list is shown.
+    private func neighbour(of selection: UUID?, direction: MoveCommandDirection) -> UUID? {
+        let order = filteredSessions.map(\.id)
+        guard !order.isEmpty else { return nil }
+        guard let selection, let index = order.firstIndex(of: selection) else { return order.first }
+        switch direction {
+        case .up: return index > 0 ? order[index - 1] : nil
+        case .down: return index + 1 < order.count ? order[index + 1] : nil
+        default: return nil
+        }
+    }
+
+    /// The archive in the order it is read: newest first, grouped by the day it happened.
+    private var archiveDays: [(label: String, sessions: [RecordingSession])] {
+        var days: [(label: String, sessions: [RecordingSession])] = []
+        for session in filteredSessions {
+            let label = RussianDates.dayLabel(session.createdAt)
+            if days.last?.label == label { days[days.count - 1].sessions.append(session) }
+            else { days.append((label, [session])) }
+        }
+        return days
+    }
+
     private var archiveEmpty: some View {
         VStack(spacing: 18) {
             Image(systemName: "waveform.circle.fill").font(.system(size: 64)).foregroundStyle(FlowTheme.accent.opacity(0.85))
@@ -242,10 +267,10 @@ private struct SessionRow: View {
                     if session.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
                 }
                 HStack(spacing: 6) {
-                    Text(session.createdAt.formatted(date: .abbreviated, time: .shortened))
-                    if session.duration > 0 { Text("·"); Text(Duration.seconds(session.duration).formatted(.time(pattern: .minuteSecond))) }
+                    Text(RussianDates.dayAndTime(session.createdAt))
+                    if session.duration > 0 { Text("·"); Text(RussianDates.length(session.duration)) }
                 }.font(.caption).foregroundStyle(.secondary)
-                Text(session.rawText.isEmpty ? session.kind.shortTitle : String(session.rawText.prefix(110))).font(.caption).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
+                Text(String(session.preview.prefix(140))).font(.caption).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
                 if session.state == "interrupted" { Label("Можно восстановить", systemImage: "arrow.clockwise").font(.caption).foregroundStyle(.orange) }
             }
             Spacer(minLength: 0)
@@ -389,11 +414,11 @@ struct SessionView: View {
             KindBadge(kind: current.kind, size: 36)
             VStack(alignment: .leading, spacing: 5) {
                 TextField("Название", text: $newTitle).font(.title2.bold()).textFieldStyle(.plain)
-                    .onSubmit { var value = current; value.title = newTitle; model.save(value) }
+                    .onSubmit { model.rename(current, to: newTitle) }
                 HStack(spacing: 7) {
                     Text(current.kind.title)
-                    Text("·"); Text(current.createdAt.formatted(date: .abbreviated, time: .shortened))
-                    if current.duration > 0 { Text("·"); Text(Duration.seconds(current.duration).formatted(.time(pattern: .minuteSecond))) }
+                    Text("·"); Text(RussianDates.dayAndTime(current.createdAt))
+                    if current.duration > 0 { Text("·"); Text(RussianDates.length(current.duration)) }
                     if isMeeting, current.participantCount > 1 { Text("·"); Text("\(current.participantCount) участника") }
                 }.font(.caption).foregroundStyle(.secondary)
             }
@@ -428,7 +453,7 @@ struct SessionView: View {
             if !extraVersions.isEmpty {
                 Menu {
                     ForEach(extraVersions, id: \.index) { item in
-                        Button("\(item.version.label ?? item.version.mode.title) · \(item.version.date.formatted(date: .omitted, time: .shortened))") {
+                        Button("\(item.version.label ?? item.version.mode.title) · \(RussianDates.time(item.version.date))") {
                             pane = .version(item.index)
                         }
                     }
@@ -531,7 +556,7 @@ struct SessionView: View {
                             .buttonStyle(.plain).font(.caption.monospaced()).foregroundStyle(FlowTheme.accent)
                         Text(moment.title).font(.callout.weight(.medium)).lineLimit(1)
                         if moment.duration >= 30 {
-                            Text(Duration.seconds(moment.duration).formatted(.time(pattern: .minuteSecond)))
+                            Text(RussianDates.length(moment.duration))
                                 .font(.caption2).foregroundStyle(.tertiary)
                         }
                         Spacer(minLength: 0)

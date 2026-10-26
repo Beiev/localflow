@@ -196,10 +196,8 @@ public struct ArchiveMCP: Sendable {
 
     static func line(for session: RecordingSession) -> String {
         var parts = [session.id.uuidString, session.kind.rawValue,
-                     session.createdAt.formatted(date: .numeric, time: .shortened)]
-        if session.duration > 0 {
-            parts.append(String(format: "%d:%02d", Int(session.duration) / 60, Int(session.duration) % 60))
-        }
+                     RussianDates.dayAndTime(session.createdAt)]
+        if session.duration > 0 { parts.append(RussianDates.length(session.duration)) }
         if session.kind == .meeting, session.participantCount > 1 { parts.append("\(session.participantCount) уч.") }
         parts.append(session.summary == nil ? "без конспекта" : "есть конспект")
         return "\(session.title) — " + parts.joined(separator: " · ")

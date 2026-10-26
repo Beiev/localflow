@@ -39,9 +39,6 @@ final class AppModel: ObservableObject {
     @Published var dictationLabel = ShortcutSpec.dictationDefault.label
     @Published var meetingLabel = ShortcutSpec.meetingDefault.label
     @Published var section = "archive"
-    /// A call looks to be happening and this application is not recording it. Never acted on by
-    /// itself: it draws an offer, and the owner presses something or does not.
-    @Published var callNoticed = false
     let store: Store
     let speech = SpeechEngine()
     let editor = TextEngine()
@@ -80,9 +77,6 @@ final class AppModel: ObservableObject {
     /// Reading the shared screen during a call is off until asked for: it is a record of what was
     /// on screen, which is not what somebody starts a recording expecting.
     var readsScreenInMeetings: Bool { UserDefaults.standard.bool(forKey: "captureScreen") }
-    /// On unless the owner turns it off, because the cost of being wrong is one line of interface
-    /// and the cost of being right is a call that would otherwise not have been recorded.
-    var noticesMeetings: Bool { UserDefaults.standard.object(forKey: "noticeMeetings") as? Bool ?? true }
     func createNote() {
         guard active == nil, !processing, !isStarting else { return }
         let note = RecordingSession.draftNote()
@@ -92,40 +86,6 @@ final class AppModel: ObservableObject {
     func startNote(_ note: RecordingSession) { start(.note, existing: note) }
     var selectedSession: RecordingSession? { sessions.first { $0.id == selection } }
     var isRecording: Bool { active != nil && !processing }
-    private var watch = MeetingWatch()
-    private var meetingWatchTimer: Timer?
-
-    /// Looks at the machine, not at the microphone: whether something else is holding the input
-    /// and whether an application people hold calls in is running.
-    func noticeCall() {
-        // Turned off: forget the run in progress too, so turning it back on half an hour into a
-        // call does not greet the owner with an offer the watch never actually waited for.
-        guard noticesMeetings else {
-            watch = MeetingWatch()
-            callNoticed = false
-            return
-        }
-        let busy = isRecording || processing || isStarting
-        // The device property is a read of one value; the process list is not. Asked in this
-        // order, the second question is only asked while somebody is actually holding the
-        // microphone, which is a small part of a day.
-        let inputBusy = AudioActivity.inputIsBusy()
-        let offer = watch.update(inputBusy: inputBusy,
-                                 conferencing: inputBusy && AudioActivity.conferencingIsRunning(),
-                                 busy: busy)
-        if callNoticed != offer { callNoticed = offer }
-    }
-    /// Record the call the offer is about. The offer never starts anything by itself.
-    func recordNoticedCall() {
-        watch.answer()
-        callNoticed = false
-        if !isRecording && !processing { toggleMeeting() }
-    }
-    func dismissNoticedCall() {
-        watch.answer()
-        callNoticed = false
-    }
-
     init() throws {
         try AppPaths.create()
         store = try Store()
@@ -140,13 +100,6 @@ final class AppModel: ObservableObject {
             await self.updateMetrics()
         } }
         pressure.resume(); pressureSource = pressure
-        // Five seconds is far below the twenty-five the watch waits for, and the two questions it
-        // asks are a property read and a process list.
-        let noticing = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.noticeCall() }
-        }
-        noticing.tolerance = 2
-        meetingWatchTimer = noticing
         capture.onFrame = { [weak self] frame in Task { @MainActor in self?.receive(frame) } }
         capture.onError = { [weak self] id, message in Task { @MainActor in
             guard let self, self.active?.id == id, !self.isCancelling else { return }
@@ -509,7 +462,10 @@ final class AppModel: ObservableObject {
             let mode: ProcessingMode = result.kind == .meeting ? .summary : (result.editingMode ?? defaultEditingMode)
             status = mode.progressTitle
             do {
-                let edit = try await editor.edit(raw, mode: mode, dictionary: dictionary, style: result.editingStyle ?? editingStyle, screen: result.screen)
+                let edit = try await editor.edit(raw, mode: mode, dictionary: dictionary, style: result.editingStyle ?? editingStyle, screen: result.screen,
+                                                 progress: { [weak self] step, total in
+                                                     Task { @MainActor in self?.reportCondensing(step, of: total, mode: mode) }
+                                                 })
                 // An empty result is not a version. Condensing can legitimately find nothing worth
                 // keeping, and saving that leaves the summary tab showing a blank document.
                 if !edit.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -621,7 +577,10 @@ final class AppModel: ObservableObject {
         var pending = session; pending.pendingMode = mode; pending.state = "processing"; try? store.save(pending); status = mode.progressTitle
         processingTask = Task {
             do {
-                let edit = try await editor.edit((mode == .clean || mode == .compose) ? session.rawText : session.referencedText, mode: mode, dictionary: dictionary, style: editingStyle, screen: session.screen)
+                let edit = try await editor.edit((mode == .clean || mode == .compose) ? session.rawText : session.referencedText, mode: mode, dictionary: dictionary, style: editingStyle, screen: session.screen,
+                                                 progress: { [weak self] step, total in
+                                                     Task { @MainActor in self?.reportCondensing(step, of: total, mode: mode) }
+                                                 })
                 try Task.checkCancellation()
                 var updated = session; updated.pendingMode = nil; updated.state = "ready"
                 if edit.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -688,9 +647,37 @@ final class AppModel: ObservableObject {
         }
     }
     func save(_ session: RecordingSession) {
+        let session = nameFromContent(session)
         do { try store.save(session); refresh() } catch { self.error = error.localizedDescription }
         exportCopy(session)
     }
+    /// Saving a title the owner typed, which also stops this recording being renamed again.
+    func rename(_ session: RecordingSession, to title: String) {
+        var value = session
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != session.title else { return }
+        value.title = trimmed
+        value.titleIsAutomatic = false
+        do { try store.save(value); refresh() } catch { self.error = error.localizedDescription }
+    }
+    /// Where a long condensing run has got to. Two minutes of an unchanging "Готовлю конспект…"
+    /// is two minutes of not knowing whether anything is happening.
+    func reportCondensing(_ step: Int, of total: Int, mode: ProcessingMode) {
+        guard processing, total > 1 else { return }
+        status = mode.progressTitle + " · \(step) из \(total)"
+    }
+
+    /// A condensed meeting takes its name from what it turned out to be about, until the owner
+    /// types one. A list of "Созвон 25 октября, 14:37" is a list of files, not a list of meetings.
+    func nameFromContent(_ session: RecordingSession) -> RecordingSession {
+        guard session.kind == .meeting, session.titleIsAutomatic,
+              let name = RecordingSession.title(fromTopics: session.summaryTopicNames)
+        else { return session }
+        var value = session
+        value.title = name
+        return value
+    }
+
     /// The folder the owner keeps notes in, when they have asked for a copy to land there.
     var exportFolder: URL? {
         UserDefaults.standard.string(forKey: "exportFolder").flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }

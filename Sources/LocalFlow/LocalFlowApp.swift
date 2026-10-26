@@ -54,21 +54,13 @@ final class LocalFlowDelegate: NSObject, NSApplicationDelegate {
 private struct StatusIcon: View {
     @ObservedObject var model: AppModel
     var body: some View {
-        Image(systemName: model.processing ? "ellipsis.circle"
-                : (model.isRecording ? "record.circle"
-                   : (model.callNoticed ? "person.2.wave.2" : "waveform")))
-            .accessibilityLabel("LocalFlow: " + (model.callNoticed ? "похоже, идёт созвон" : model.status))
+        Image(systemName: model.processing ? "ellipsis.circle" : (model.isRecording ? "record.circle" : "waveform"))
+            .accessibilityLabel("LocalFlow: " + model.status)
     }
 }
 private struct StatusMenu: View {
     @ObservedObject var model: AppModel
     var body: some View {
-        if model.callNoticed {
-            Text("Похоже, идёт созвон")
-            Button("Записать его · \(model.meetingLabel)") { model.recordNoticedCall() }
-            Button("Не сейчас") { model.dismissNoticedCall() }
-            Divider()
-        }
         Text(model.status)
         Button(model.isRecording ? "Завершить диктовку · \(model.dictationLabel)" : "Диктовать · \(model.dictationLabel)") { model.toggleDictation() }.disabled(model.processing || model.isStarting)
         Button(model.active?.kind == .meeting && model.isRecording ? "Завершить созвон · \(model.meetingLabel)" : "Записать созвон · \(model.meetingLabel)") { model.toggleMeeting() }.disabled(model.processing || (model.isRecording && model.active?.kind != .meeting))

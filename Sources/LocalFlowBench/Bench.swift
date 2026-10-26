@@ -322,6 +322,14 @@ struct Bench {
                     let elapsed = Date().timeIntervalSince(start)
                     let score = SummaryQuality.score(result.text, source: source, duration: stored.duration, speakers: names)
                     print("\(strategy.rawValue.padding(toLength: 10, withPad: " ", startingAt: 0)) \(score.line) calls=\(result.proposals.count) elapsed_s=\(String(format: "%.1f", elapsed))")
+                    // What the model actually replied, when asked for: the only way to tell a
+                    // prompt that is not followed from a parser that is too strict.
+                    if ProcessInfo.processInfo.environment["LOCALFLOW_SHOW_REPLIES"] != nil {
+                        for (index, proposal) in result.proposals.enumerated() {
+                            print("--- \(strategy.rawValue) reply \(index + 1)/\(result.proposals.count) ---")
+                            print(proposal)
+                        }
+                    }
                     rows["\(strategy.rawValue)_characters"] = score.characters
                     rows["\(strategy.rawValue)_purity"] = score.sectionPurity
                     rows["\(strategy.rawValue)_redundancy"] = score.redundancy

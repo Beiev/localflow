@@ -5,6 +5,10 @@ import Foundation
 /// concatenated, so the plan runs a second pass over the notes.
 public enum EditPlan {
     public typealias Respond = @Sendable (_ prompt: String, _ instructions: String) async throws -> String
+    /// How far through a condensing run we are: step, and how many there are. Condensing a
+    /// 45-minute call is a two-minute operation, and two minutes of "Готовлю конспект…" is two
+    /// minutes of not knowing whether anything is happening.
+    public typealias Progress = @Sendable (_ step: Int, _ total: Int) -> Void
 
     /// How a meeting is condensed. `legacy` is the single free-text pass this work replaced; it is
     /// kept reachable so the two can be measured against each other on the same material, which
@@ -35,12 +39,14 @@ public enum EditPlan {
 
     public static func run(text: String, mode: ProcessingMode, dictionary: [DictionaryEntry], style: String = "",
                            strategy: SummaryStrategy = .structured, screen: [ScreenMoment] = [],
+                           progress: @escaping Progress = { _, _ in },
                            respond: Respond) async throws -> EditResult {
         let source = TextSafety.applyDictionary(text, entries: dictionary)
         let styleNote = style.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : "\nПредпочтения оформления пользователя (применяй к стилю, не добавляй факты): " + String(style.prefix(1500))
         if mode.preservesTurns { return try await cleanTurns(source, styleNote: styleNote, respond: respond) }
         if mode == .summary, strategy == .structured {
-            return try await StructuredSummary.run(text: source, style: style, screen: screen, respond: respond)
+            return try await StructuredSummary.run(text: source, style: style, screen: screen,
+                                                   progress: progress, respond: respond)
         }
         var instruction: String
         switch mode {

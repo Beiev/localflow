@@ -83,11 +83,42 @@ public struct RecordingSession: Codable, Identifiable, Sendable {
         get { screenMoments ?? [] }
         set { screenMoments = newValue.isEmpty ? nil : newValue }
     }
-    public init(kind: SessionKind) { self.kind = kind; self.title = kind.title + " " + Date().formatted(date: .abbreviated, time: .shortened) }
+    /// Whether the title is still the one the recording was given when it started.
+    ///
+    /// Stored optional for the same reason `screenMoments` is: a non-optional key makes every
+    /// recording already in the archive fail to decode. Absent means an old recording, and an old
+    /// recording's title is left alone — it may well have been typed by hand.
+    private var automaticTitle: Bool?
+    public var titleIsAutomatic: Bool {
+        get { automaticTitle ?? false }
+        set { automaticTitle = newValue }
+    }
+    public init(kind: SessionKind) {
+        self.kind = kind
+        self.title = kind.title + " " + RussianDates.dayAndTime(Date())
+        self.automaticTitle = true
+    }
     public static func draftNote() -> RecordingSession {
         var note = RecordingSession(kind: .note)
-        note.state = "draft"; note.title = "Заметка " + Date().formatted(date: .abbreviated, time: .omitted)
+        note.state = "draft"; note.title = "Заметка " + RussianDates.day(Date())
         return note
+    }
+    /// A name for a condensed meeting, taken from what it turned out to be about.
+    ///
+    /// A list of "Созвон 25 октября, 14:37" is a list of files. The topics the document already
+    /// names are what a person would have called it, so they are what it is called — until the
+    /// owner types something, after which this never touches it again.
+    public static func title(fromTopics topics: [String], longest: Int = 60) -> String? {
+        let usable = topics.map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { $0.count >= 3 && $0.range(of: RichText.timePattern, options: .regularExpression) == nil }
+        guard !usable.isEmpty else { return nil }
+        var name = ""
+        for topic in usable {
+            let next = name.isEmpty ? topic : name + ", " + topic.prefix(1).lowercased() + topic.dropFirst()
+            if next.count > longest { break }
+            name = next
+        }
+        return name.isEmpty ? String(usable[0].prefix(longest)) : name
     }
     public var rawText: String { segments.sorted { $0.start < $1.start }.map(\.text).joined(separator: " ") }
     /// The microphone track's speaker key. Naming it puts the owner's own name in the transcript
@@ -148,6 +179,42 @@ public struct RecordingSession: Codable, Identifiable, Sendable {
             return "### \(moment.timestamp) \(where_.isEmpty ? moment.title : where_)\n\n\(moment.text)"
         }.joined(separator: "\n\n")
     }
+    /// The line under a record's name in the archive.
+    ///
+    /// The first words of the recognition were being used, which on a meeting is whatever somebody
+    /// happened to say first — "Прекрасно, прекрасно. Кот налил на кресло." A condensed recording
+    /// knows what it was about, so it says that instead.
+    public var preview: String {
+        if let summary {
+            for block in RichText.blocks(summary.text) {
+                guard case .paragraph(let text) = block else { continue }
+                let value = RichText.inline(text)
+                    .replacingOccurrences(of: RichText.timePattern, with: "", options: .regularExpression)
+                    .replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespaces)
+                if value.count >= 20 { return value }
+            }
+        }
+        let spoken = rawText.trimmingCharacters(in: .whitespaces)
+        return spoken.isEmpty ? kind.title : spoken
+    }
+
+    /// The topic headings of the condensed document, in order.
+    public var summaryTopicNames: [String] {
+        guard let summary else { return [] }
+        var names: [String] = []
+        var inTopics = false
+        for block in RichText.blocks(summary.text) {
+            guard case .heading(let level, let text) = block else { continue }
+            if level <= 2 {
+                inTopics = text.lowercased().contains("по темам") || text.lowercased().contains("разбор по")
+                continue
+            }
+            if inTopics { names.append(RichText.inline(text)) }
+        }
+        return names
+    }
+
     /// The meeting as a message to the people who were in it: what each topic came to, who is
     /// doing what, and what nobody answered.
     ///
@@ -193,7 +260,7 @@ public struct RecordingSession: Codable, Identifiable, Sendable {
                 continue
             }
         }
-        var parts = ["Итоги созвона «\(title)» · " + createdAt.formatted(date: .long, time: .shortened)]
+        var parts = ["Итоги созвона «\(title)» · " + RussianDates.dayAndTime(createdAt)]
         let people = speakers.values.filter { !$0.isEmpty && $0 != Self.ownerIdentity }.sorted()
         if !people.isEmpty { parts.append("Участники: " + people.joined(separator: ", ")) }
         if !topics.isEmpty {
@@ -236,7 +303,7 @@ public struct RecordingSession: Codable, Identifiable, Sendable {
         return parts.filter { !$0.isEmpty }.joined(separator: "\n\n")
     }
     private var durationLine: String {
-        let stamp = createdAt.formatted(date: .long, time: .shortened)
+        let stamp = RussianDates.dayAndTime(createdAt)
         guard duration > 0 else { return stamp }
         return stamp + " · " + String(format: "%d:%02d", Int(duration) / 60, Int(duration) % 60)
     }

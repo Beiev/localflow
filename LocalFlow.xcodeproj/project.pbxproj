@@ -17,6 +17,7 @@
 		3099013DEAAB336DBECD57DB /* SpeakerIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE977ADFC7D5569B098E4E03 /* SpeakerIdentityTests.swift */; };
 		30F2D0EA6B1E1FA7ABACB725 /* NotchMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 656403CCF88E326B25C63E7A /* NotchMotion.swift */; };
 		3BED8ACF93DF1887465842F5 /* AudioPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D43FA4FBEBBA5D5E21A1069 /* AudioPlayback.swift */; };
+		4ECD00BCEA4A1BF6D88C60AC /* CalendarNamingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFFA741531A22D48362FC7E2 /* CalendarNamingTests.swift */; };
 		553A982EC43BAD8FC870AE0C /* NotchMotion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 656403CCF88E326B25C63E7A /* NotchMotion.swift */; };
 		5BE980092018CB204F20053D /* SummaryQualityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B94B072CDCBAE3F6DCC4C4B9 /* SummaryQualityTests.swift */; };
 		5FC71D34F3AA093791BC54EB /* EditSafetyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0213114801CBB0400B25C7E4 /* EditSafetyTests.swift */; };
@@ -30,7 +31,6 @@
 		837889FBA2F7383269F145A8 /* SpeechSilenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E9AD510D0D0AC1B701C9246 /* SpeechSilenceTests.swift */; };
 		8CD8D34D1303AC05039C91A1 /* NotchGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FC9CD97B3D4D50A47B0B734 /* NotchGeometryTests.swift */; };
 		92379FF4AC26F139B686A2D0 /* LocalFlowApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4AD72D510C6BC8691781F42 /* LocalFlowApp.swift */; };
-		92A8E8D9120E4E3365969639 /* MeetingWatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBC3B6644ED43918CF13FA17 /* MeetingWatchTests.swift */; };
 		94B050CA3AD8E85C2175B9EE /* NotchGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FF326129BA6299E63BD1387 /* NotchGeometry.swift */; };
 		95BD29BA4B1882EB72FDBFDC /* LocalFlow.icns in Resources */ = {isa = PBXBuildFile; fileRef = 8CBD3E61D7175D8DCF36F830 /* LocalFlow.icns */; };
 		97D3F6976CE823E6BE6E657C /* ScreenContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3061756C12F91E21EC1F0734 /* ScreenContextTests.swift */; };
@@ -44,7 +44,6 @@
 		BA336C2241139E971624E219 /* RichTextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B230FFA5FD390D17C368C8C2 /* RichTextTests.swift */; };
 		C4C5D6941630B9020C8B387E /* LocalFlowCore in Frameworks */ = {isa = PBXBuildFile; productRef = 6A2346E6ECEA9EE811926A9C /* LocalFlowCore */; };
 		C81FD7B984D761C959AB31FD /* LiveTranscriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33A52AFE244900698303D55F /* LiveTranscriptTests.swift */; };
-		D2635420A743BC426C8AFD0E /* AudioActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DF485585253C838D06FBDA8 /* AudioActivity.swift */; };
 		D3213D830B31085E41CF0145 /* ParticipantsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DC8E69F53564F296D013119 /* ParticipantsView.swift */; };
 		D6F09D6F166909093D129367 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3E626B83FD5DC2AEB144BB0 /* Views.swift */; };
 		D81AB9FB1368513079FF397D /* CalendarAttendees.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89418E9054E9E3DC672B671F /* CalendarAttendees.swift */; };
@@ -83,11 +82,11 @@
 		89418E9054E9E3DC672B671F /* CalendarAttendees.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarAttendees.swift; sourceTree = "<group>"; };
 		89C55CA01AE225B9463FBC20 /* FormattedText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormattedText.swift; sourceTree = "<group>"; };
 		8CBD3E61D7175D8DCF36F830 /* LocalFlow.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = LocalFlow.icns; sourceTree = "<group>"; };
-		8DF485585253C838D06FBDA8 /* AudioActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioActivity.swift; sourceTree = "<group>"; };
 		93044E9891428F439236EBCB /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		977AB559B0139422245A2709 /* StoreMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreMigrationTests.swift; sourceTree = "<group>"; };
 		9E9AD510D0D0AC1B701C9246 /* SpeechSilenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechSilenceTests.swift; sourceTree = "<group>"; };
 		9FC9CD97B3D4D50A47B0B734 /* NotchGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchGeometryTests.swift; sourceTree = "<group>"; };
+		AFFA741531A22D48362FC7E2 /* CalendarNamingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarNamingTests.swift; sourceTree = "<group>"; };
 		B230FFA5FD390D17C368C8C2 /* RichTextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RichTextTests.swift; sourceTree = "<group>"; };
 		B799CE36FB88352111BE4674 /* NotchSurface.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchSurface.swift; sourceTree = "<group>"; };
 		B94B072CDCBAE3F6DCC4C4B9 /* SummaryQualityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryQualityTests.swift; sourceTree = "<group>"; };
@@ -100,7 +99,6 @@
 		DB014DC10D16B7AF64C2A969 /* TranscriberTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriberTests.swift; sourceTree = "<group>"; };
 		DB3E9541B269457C1F3F8855 /* CoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreTests.swift; sourceTree = "<group>"; };
 		DE977ADFC7D5569B098E4E03 /* SpeakerIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeakerIdentityTests.swift; sourceTree = "<group>"; };
-		EBC3B6644ED43918CF13FA17 /* MeetingWatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MeetingWatchTests.swift; sourceTree = "<group>"; };
 		FBD5D8E63A463ED3B989D991 /* NotchMotionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotchMotionTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -158,7 +156,6 @@
 			isa = PBXGroup;
 			children = (
 				BE5540CAF5717E62EF3F28E8 /* AppModel.swift */,
-				8DF485585253C838D06FBDA8 /* AudioActivity.swift */,
 				3D43FA4FBEBBA5D5E21A1069 /* AudioPlayback.swift */,
 				89418E9054E9E3DC672B671F /* CalendarAttendees.swift */,
 				6841E2DBBB034738DCFEA434 /* DiaryView.swift */,
@@ -210,11 +207,11 @@
 			isa = PBXGroup;
 			children = (
 				D6912CEA05CB94E3ECC089D4 /* ArchiveMCPTests.swift */,
+				AFFA741531A22D48362FC7E2 /* CalendarNamingTests.swift */,
 				BFD043582E92131275054C6E /* CaptureHealthTests.swift */,
 				DB3E9541B269457C1F3F8855 /* CoreTests.swift */,
 				070F39F1997C2AB1941F8A8B /* EditPlanTests.swift */,
 				0213114801CBB0400B25C7E4 /* EditSafetyTests.swift */,
-				EBC3B6644ED43918CF13FA17 /* MeetingWatchTests.swift */,
 				62D6BD429BD1FC11299972F9 /* MetricsTests.swift */,
 				B230FFA5FD390D17C368C8C2 /* RichTextTests.swift */,
 				3061756C12F91E21EC1F0734 /* ScreenContextTests.swift */,
@@ -443,11 +440,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				9905AE0E0F3590D61C206B93 /* ArchiveMCPTests.swift in Sources */,
+				4ECD00BCEA4A1BF6D88C60AC /* CalendarNamingTests.swift in Sources */,
 				6A5859BB080B3F2E335324FE /* CaptureHealthTests.swift in Sources */,
 				E45955EB14AD0120B3D8B142 /* CoreTests.swift in Sources */,
 				059BC32B3CD428CBF168119C /* EditPlanTests.swift in Sources */,
 				5FC71D34F3AA093791BC54EB /* EditSafetyTests.swift in Sources */,
-				92A8E8D9120E4E3365969639 /* MeetingWatchTests.swift in Sources */,
 				1255B8C31F3634B554ED5F91 /* MetricsTests.swift in Sources */,
 				BA336C2241139E971624E219 /* RichTextTests.swift in Sources */,
 				97D3F6976CE823E6BE6E657C /* ScreenContextTests.swift in Sources */,
@@ -466,7 +463,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				194F8EB804FD2B579B658F8D /* AppModel.swift in Sources */,
-				D2635420A743BC426C8AFD0E /* AudioActivity.swift in Sources */,
 				3BED8ACF93DF1887465842F5 /* AudioPlayback.swift in Sources */,
 				D81AB9FB1368513079FF397D /* CalendarAttendees.swift in Sources */,
 				D987F1C5B880CABB817A4F74 /* DiaryView.swift in Sources */,

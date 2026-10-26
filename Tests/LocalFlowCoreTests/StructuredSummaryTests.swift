@@ -250,14 +250,20 @@ final class StructuredSummaryDocumentTests: XCTestCase {
     /// The opening is assembled, never asked for. A 2B model asked to write a paragraph about an
     /// hour of conversation produced "Срок, связанный с 4 позиции, показал…" on real
     /// material — specific by every counter and unreadable — so the model is no longer asked.
-    func testTheOpeningIsAssembledAndCostsNoModelCall() async throws {
+    func testTheCountsAreAssembledAndTheDocumentIsNotWrittenTwice() async throws {
         let stub = Stub { _, _, _ in "РЕШЕНИЕ | Подняли первый порог до двух с половиной | u2" }
         let result = try await run(stub)
         let calls = await stub.calls
-        XCTAssertEqual(calls, 1, "одно извлечение и ни одной попытки вступления")
-        XCTAssertTrue(result.text.contains("Решили: Подняли первый порог"))
+        // One extraction and one whole-conversation paragraph. The paragraph here comes back as a
+        // record line, which is not a paragraph, so the guard refuses it and the opening is the
+        // assembled one — which is exactly the fallback this asserts.
+        XCTAssertEqual(calls, 2, "извлечение и один проход по всему разговору")
         XCTAssertTrue(result.text.contains("Решения: 1"))
         XCTAssertTrue(result.text.contains("Участники: Паша, Лена"))
+        // The decision itself is a few lines below. The first version quoted it here as well, and
+        // on a real call the same sentences appeared twice within half a screen.
+        XCTAssertEqual(result.text.components(separatedBy: "Подняли первый порог").count - 1, 1,
+                       "вступление не повторяет документ под ним")
         XCTAssertFalse(result.text.contains("Разговор на"), "склонение после числительного в коде не собрать")
         let score = SummaryQuality.score(result.text, source: transcript, duration: 240, speakers: material.speakers)
         XCTAssertTrue(score.openingIsSpecific)
@@ -303,12 +309,23 @@ final class SummaryMaterialNamesTests: XCTestCase {
             SummaryRecord(kind: .decision, text: "Переносим запуск на следующую неделю", evidence: ["u1"]),
             SummaryRecord(kind: .fact, text: "Запас на диске дошёл до 650 мегабайт", evidence: ["u2"]),
         ]
-        let opening = StructuredSummary.deterministicOpening(records, people: material.named, material: material)
+        let topics = [SummaryTopic(name: "Запуск и диск", records: records)]
+        let opening = StructuredSummary.deterministicOpening(records, topics: topics,
+                                                             people: material.named, material: material)
         XCTAssertTrue(opening.contains("Участники: Макс"))
         XCTAssertFalse(opening.contains("Собеседник"))
-        XCTAssertTrue(opening.contains("Решили: Переносим запуск"))
-        XCTAssertTrue(opening.contains("Из цифр: Запас на диске"))
+        XCTAssertTrue(opening.contains("Темы: Запуск и диск"))
+        XCTAssertFalse(opening.contains("Переносим запуск"), "вступление не повторяет документ под ним")
         XCTAssertTrue(SummaryQuality.isSpecific(opening, speakers: material.speakers))
+    }
+    /// Without a named participant and without a topic carrying a figure, the opening would fit
+    /// any meeting ever held. Then, and only then, it takes a figure from the conversation.
+    func testAnOpeningWithNoNamesFallsBackToAFigure() {
+        let material = SummaryMaterial.parse("[00:10] Собеседник: слово\n[00:20] Собеседник: слово")
+        let records = [SummaryRecord(kind: .fact, text: "Запас на диске дошёл до 650 мегабайт", evidence: ["u2"])]
+        let opening = StructuredSummary.deterministicOpening(records, topics: [SummaryTopic(name: "Диск", records: records)],
+                                                             people: material.named, material: material)
+        XCTAssertTrue(opening.contains("Из цифр: Запас на диске"), opening)
     }
 }
 
@@ -485,85 +502,40 @@ final class StructuredSummaryTopicTests: XCTestCase {
         SummaryRecord(kind: kind, text: text, evidence: evidence)
     }
 
-    func testAGapInTheConversationStartsANewTopic() {
-        let records = [
-            record(.fact, "Удержание держится на тридцати процентах", "u1"),
-            record(.fact, "Из четырёх заявок три закрыли, одна висит", "u2"),
-            record(.decision, "Поднимаем первый порог до двух тысяч", "u3"),
-            record(.fact, "Домен переносим на новый тариф хостинга", "u4"),
-            record(.decision, "Хостинг и домен оплачиваем до пятницы", "u5"),
-        ]
-        let groups = StructuredSummary.merged(StructuredSummary.group(records, material: material))
-        XCTAssertEqual(groups.count, 2, "одиннадцать минут молчания о теме — это другая тема")
-        XCTAssertEqual(groups[0].count, 3)
-        XCTAssertEqual(groups[1].map(\.evidence), [["u4"], ["u5"]])
-    }
 
-    /// Without the wording rule a dense call would come out as one topic: the gap between records
-    /// in a 45-minute meeting is rarely four minutes.
-    func testASubjectChangeStartsANewTopicWithoutAGap() {
-        let close = """
-        [00:10] Паша: Удержание тридцать процентов.
-        [00:30] Лена: Удержание держится, но из четырёх заявок закрыли три.
-        [00:50] Паша: Домен переносим на новый тариф хостинга.
-        [01:10] Лена: Хостинг оплачиваем до пятницы.
-        """
-        let material = SummaryMaterial.parse(close)
-        let records = [
-            record(.fact, "Удержание держится на тридцати процентах", "u1"),
-            record(.fact, "Удержание держится, но из четырёх заявок закрыли три", "u2"),
-            record(.fact, "Домен переносим на новый тариф хостинга", "u3"),
-            record(.decision, "Хостинг и домен оплачиваем до пятницы", "u4"),
-        ]
-        let groups = StructuredSummary.group(records, material: material)
-        XCTAssertEqual(groups.count, 2)
-        XCTAssertEqual(groups[1].count, 2)
-    }
 
-    func testAStrayGroupJoinsTheNeighbourItSharesWordsWith() {
-        let удержание = [record(.fact, "Удержание держится на тридцати процентах"),
-                         record(.fact, "Второй порог удержание не меняет")]
-        let одна = [record(.decision, "Поднимаем первый порог, чтобы вытянуть удержание")]
-        let хостинг = [record(.fact, "Домен переносим на новый тариф хостинга"),
-                       record(.decision, "Хостинг оплачиваем до пятницы")]
-        let groups = StructuredSummary.merged([удержание, одна, хостинг])
-        XCTAssertEqual(groups.count, 2)
-        XCTAssertEqual(groups[0].count, 3, "строчка про удержание ушла к удержанию, а не к хостингу")
-        XCTAssertEqual(groups[1].count, 2)
-    }
 
-    func testTooManyTopicsAreFoldedDownToSomethingReadable() {
-        let groups = (0..<12).map { index in
-            [record(.fact, "Показатель номер \(index) держится ровно"),
-             record(.fact, "Показатель номер \(index) проверили отдельно")]
-        }
-        XCTAssertLessThanOrEqual(StructuredSummary.merged(groups).count, StructuredSummary.mostTopics)
-    }
-
-    func testOnlyUsableNamesAreAccepted() {
+    /// The model groups and names; it never touches what a record says. What comes back is read
+    /// as a claim about these records and nothing else.
+    func testTheModelsGroupingIsReadBackAgainstTheRecords() {
+        let records = (1...6).map { record(.fact, "Утверждение номер \($0) о чём-то своём") }
         let reply = """
-        1 | Удержание и заявки
+        Удержание и заявки | 1, 2
         2 — не тот разделитель
-        3 | [12:30]
-        4 | u12
-        5 | Хостинг и домен
-        9 | Темы, которой нет
+        [12:30] | 3, 4
+        Хостинг и домен | 3,4
+        Темы, которой нет | 99
         """
-        let named = StructuredSummary.names(reply, count: 6)
-        XCTAssertEqual(named[0], "Удержание и заявки")
-        XCTAssertNil(named[1], "строка без разделителя — не название")
-        XCTAssertNil(named[2], "одна отметка времени — не название")
-        XCTAssertNil(named[3], "ссылка на реплику — не название")
-        XCTAssertEqual(named[4], "Хостинг и домен")
-        XCTAssertNil(named[8], "номера вне списка не создают тему")
+        let topics = StructuredSummary.organised(reply, records: records)
+        XCTAssertEqual(topics.map(\.name), ["Удержание и заявки", "Хостинг и домен"],
+                       "отметка времени — не название, строка без разделителя — не группа")
+        // 5 and 6 were forgotten by the model; a validated statement is not thrown away.
+        XCTAssertEqual(topics.reduce(0) { $0 + $1.records.count }, 6)
+    }
+    func testANumberUsedTwiceCountsOnce() {
+        let records = (1...4).map { record(.fact, "Утверждение номер \($0) о чём-то своём") }
+        let topics = StructuredSummary.organised("Первая | 1, 2\nВторая | 2, 3, 4", records: records)
+        XCTAssertEqual(topics.map { $0.records.count }, [2, 2])
+    }
+    func testAGroupingThatSaysNothingUsableIsRefused() {
+        let records = (1...4).map { record(.fact, "Утверждение номер \($0) о чём-то своём") }
+        XCTAssertTrue(StructuredSummary.organised("просто текст без групп", records: records).isEmpty)
+        XCTAssertTrue(StructuredSummary.organised("Одна тема | 1, 2, 3, 4", records: records).isEmpty,
+                      "одна тема — это весь разговор")
     }
     func testANameTooLongForAHeadingIsRefused() {
         XCTAssertNil(StructuredSummary.accepted(name: String(repeating: "слово ", count: 20)))
         XCTAssertEqual(StructuredSummary.accepted(name: "  «Хостинг и домен».  "), "Хостинг и домен")
-    }
-    func testAnUnnamedTopicFallsBackToWhenItHappened() {
-        let group = [record(.fact, "Удержание держится", "u1"), record(.decision, "Поднимаем порог", "u3")]
-        XCTAssertEqual(StructuredSummary.span(of: group, material: material), "[00:10]–[01:10]")
     }
 
     func testAPassagePutsWhatWasSettledFirstAndCitesEveryStatement() {
@@ -586,7 +558,7 @@ final class StructuredSummaryTopicTests: XCTestCase {
         ]
         let topics = [SummaryTopic(name: "Удержание", records: [records[0], records[1]])]
         let document = StructuredSummary.assemble(records, topics: topics, opening: "Вступление.", material: material)
-        XCTAssertTrue(document.contains("## Разбор по темам"))
+        XCTAssertTrue(document.contains("## По темам"))
         XCTAssertTrue(document.contains("### Удержание"))
         XCTAssertFalse(document.contains("## Решения"), "решения теперь внутри темы")
         XCTAssertFalse(document.contains("## Состояние и цифры"), "цифры теперь внутри темы")
@@ -606,9 +578,9 @@ final class StructuredSummaryTopicTests: XCTestCase {
             try await stub.respond(prompt, instructions)
         }
         let calls = await stub.calls
-        XCTAssertEqual(calls, 1, "одна тема — значит и называть нечего")
+        XCTAssertEqual(calls, 2, "одна тема — значит называть нечего; второй вызов это проход по всему разговору")
         XCTAssertTrue(result.text.contains("## Решения"))
-        XCTAssertFalse(result.text.contains("## Разбор по темам"))
+        XCTAssertFalse(result.text.contains("## По темам"))
     }
 }
 
@@ -717,5 +689,203 @@ final class StructuredSummaryGuardTests: XCTestCase {
         let prompt = StructuredSummary.prompt(for: 0..<5, in: material)
         XCTAssertEqual(prompt.components(separatedBy: "</экран>").count, 2, "закрывающий маркер ровно один — наш")
         XCTAssertEqual(prompt.components(separatedBy: "<разговор>").count, 2)
+    }
+}
+
+/// Turning what somebody said into something somebody wrote.
+final class StructuredSummaryReadabilityTests: XCTestCase {
+    private let transcript = """
+    [00:10] Макс: Ну вот, нужно накидать структуру сайта к среде.
+    [00:40] Пётр: Я перегоню метаданные во все четыре типа.
+    [01:10] Макс: У нас было, по сути, четыре клиента.
+    """
+    private var material: SummaryMaterial { SummaryMaterial.parse(transcript) }
+
+    func testASentenceStartsLikeASentence() {
+        XCTAssertEqual(StructuredSummary.written("нужно накидать структуру сайта"), "Нужно накидать структуру сайта")
+    }
+    func testFillersAtTheHeadOfALineAreDropped() {
+        XCTAssertEqual(StructuredSummary.written("ну вот нужно накидать структуру сайта к среде"),
+                       "Нужно накидать структуру сайта к среде")
+        XCTAssertEqual(StructuredSummary.written("короче, в общем, продажи просели на треть"),
+                       "Продажи просели на треть")
+    }
+    /// A line that is mostly filler would be emptied by the rule, so it is left alone.
+    func testAShortLineIsNotStrippedToNothing() {
+        XCTAssertEqual(StructuredSummary.written("ну вот так"), "Ну вот так")
+    }
+    func testAFillerBetweenCommasIsLiftedOut() {
+        XCTAssertEqual(StructuredSummary.written("У нас было, по сути, четыре клиента"),
+                       "У нас было, четыре клиента")
+    }
+    /// Eight of nine tasks on a real call came out with no owner, because the model is asked for
+    /// one and rarely supplies it — while the recording knows who was speaking.
+    func testATaskSaidInTheFirstPersonBelongsToWhoeverSaidIt() {
+        var session = SummaryMaterial.parse(transcript)
+        session.speakers = ["Макс", "Пётр"]
+        let records = StructuredSummary.parse("ЗАДАЧА | - | Я перегоню метаданные во все четыре типа | - | u2",
+                                              window: 0..<3, material: session)
+        XCTAssertEqual(records.first?.owner, "Пётр")
+    }
+    func testATaskAboutSomebodyElseIsNotAttributedToTheSpeaker() {
+        var session = SummaryMaterial.parse(transcript)
+        session.speakers = ["Макс", "Пётр"]
+        let records = StructuredSummary.parse("ЗАДАЧА | - | Накидать структуру сайта к среде | - | u1",
+                                              window: 0..<3, material: session)
+        XCTAssertNil(records.first?.owner, "третье лицо не делает говорящего исполнителем")
+    }
+    func testTheDocumentCarriesWrittenSentences() {
+        let topic = SummaryTopic(name: "Сайт", records: [
+            SummaryRecord(kind: .decision, text: "Нужно накидать структуру сайта", evidence: ["u1"]),
+        ])
+        XCTAssertTrue(StructuredSummary.passage(topic, material: material).hasPrefix("Нужно накидать"))
+    }
+}
+
+/// The one call that reads the whole conversation: what it was about, guarded.
+final class StructuredSummaryNarrativeTests: XCTestCase {
+    private let spoken = """
+    Макс: Удержание держится на тридцати процентах, это мало.
+    Пётр: Из четырёх заявок три закрыли, одна висит.
+    Макс: Поднимаем первый порог до двух тысяч.
+    """
+    private func paragraph(_ count: Int = 200) -> String {
+        "Разговор о том, как вытащить удержание и что делать с заявками. " + String(repeating: "Обсудили подходы. ", count: count / 19)
+    }
+
+    func testAParagraphThatSaysSomethingIsKept() {
+        let told = StructuredSummary.accepted(narrative: paragraph(), spoken: spoken)
+        XCTAssertFalse(told.isEmpty)
+        XCTAssertTrue(told.hasPrefix("Разговор о том"))
+    }
+    /// A readable paragraph with a wrong number is worse than no paragraph.
+    func testAFigureNobodySaidThrowsTheParagraphAway() {
+        XCTAssertTrue(StructuredSummary.accepted(narrative: paragraph() + " Выручка выросла на 87 процентов.", spoken: spoken).isEmpty)
+        XCTAssertFalse(StructuredSummary.accepted(narrative: paragraph() + " Удержание держится на 30 процентах.",
+                                                  spoken: spoken + " 30").isEmpty)
+    }
+    func testAClockItCannotHaveKnownIsRefused() {
+        XCTAssertTrue(StructuredSummary.accepted(narrative: paragraph() + " Это было в [12:30].", spoken: spoken).isEmpty)
+        XCTAssertTrue(StructuredSummary.accepted(narrative: paragraph() + " Это было в [134].", spoken: spoken).isEmpty)
+    }
+    func testAListOrAHeadingIsNotAParagraph() {
+        XCTAssertTrue(StructuredSummary.accepted(narrative: "## О чём\n\n" + paragraph(), spoken: spoken).isEmpty)
+        XCTAssertTrue(StructuredSummary.accepted(narrative: paragraph() + "\n- Первый пункт", spoken: spoken).isEmpty)
+    }
+    func testSomethingTooShortOrTooLongIsRefused() {
+        XCTAssertTrue(StructuredSummary.accepted(narrative: "Поговорили.", spoken: spoken).isEmpty)
+        XCTAssertTrue(StructuredSummary.accepted(narrative: String(repeating: "слово ", count: 400), spoken: spoken).isEmpty)
+    }
+    /// When the paragraph survives it opens the document and the counts follow it; when it does
+    /// not, the document opens with what the code assembled, exactly as before.
+    func testTheOpeningUsesTheParagraphWhenThereIsOne() {
+        let material = SummaryMaterial.parse("[00:10] Макс: слово\n[00:20] Пётр: слово")
+        let records = [SummaryRecord(kind: .decision, text: "Поднимаем первый порог", evidence: ["u1"])]
+        let withTold = StructuredSummary.opening(for: records, told: "Разговор о порогах и удержании.", material: material)
+        XCTAssertTrue(withTold.hasPrefix("Разговор о порогах"))
+        XCTAssertTrue(withTold.contains("Решения: 1"))
+        XCTAssertTrue(withTold.contains("Участники: Макс, Пётр"))
+        let without = StructuredSummary.opening(for: records, material: material)
+        XCTAssertTrue(without.hasPrefix("Участники: Макс, Пётр"))
+    }
+}
+
+/// Two defects a real 45-minute call put in front of the owner.
+final class StructuredSummaryFilingTests: XCTestCase {
+    private let material = SummaryMaterial.parse("[00:10] Макс: слово\n[21:52] Пётр: слово")
+
+    /// Both of these came from one turn and both reached the task table.
+    func testTwoStatementsFromOneTurnAreOnePoint() {
+        let records = [
+            SummaryRecord(kind: .task, text: "Нужно актуализировать информацию, удалив неактуальное", evidence: ["u2"]),
+            SummaryRecord(kind: .task, text: "Нужно убрать всё неактуальное и оставить актуальное", evidence: ["u2"]),
+        ]
+        XCTAssertEqual(StructuredSummary.deduplicate(records, material: material).count, 1)
+    }
+    func testTheSameWordsFromDifferentMomentsStayTwoPoints() {
+        let records = [
+            SummaryRecord(kind: .task, text: "Нужно актуализировать информацию, удалив неактуальное", evidence: ["u1"]),
+            SummaryRecord(kind: .task, text: "Нужно убрать всё неактуальное и оставить актуальное", evidence: ["u2"]),
+        ]
+        XCTAssertEqual(StructuredSummary.deduplicate(records, material: material).count, 2)
+    }
+    func testNobodyCanBeGivenAStatementAboutTheWorld() {
+        XCTAssertEqual(StructuredSummary.route(.task, text: "Никто не хочет покупать средний тир"), .fact)
+        XCTAssertEqual(StructuredSummary.route(.task, text: "Нечего обсуждать до пятницы"), .fact)
+        XCTAssertEqual(StructuredSummary.route(.task, text: "Нужно убрать всё неактуальное"), .task)
+    }
+}
+
+final class StructuredSummaryQuestionAndOwnerTests: XCTestCase {
+    private var material: SummaryMaterial {
+        var value = SummaryMaterial.parse("[00:10] Макс: слово\n[00:40] Пётр: слово")
+        return value
+    }
+    /// "Как сейчас выглядит ситуация" reached a real document and told its reader nothing.
+    func testAQuestionAboutNothingNameableIsDropped() {
+        let records = StructuredSummary.parse("ВОПРОС | Как сейчас выглядит ситуация у нас | u1",
+                                              window: 0..<2, material: material)
+        XCTAssertTrue(records.isEmpty)
+    }
+    func testAQuestionAboutSomethingIsKept() {
+        let records = StructuredSummary.parse("ВОПРОС | Как прокидывать сайт через прокси | u1",
+                                              window: 0..<2, material: material)
+        XCTAssertEqual(records.count, 1)
+    }
+    /// On a call with two people, "тебе надо" names the other one.
+    func testATaskHandedToTheOtherSideFindsItsOwner() {
+        let records = StructuredSummary.parse("ЗАДАЧА | - | Тебе надо передать доступ к аккаунту | - | u1",
+                                              window: 0..<2, material: material)
+        XCTAssertEqual(records.first?.owner, "Пётр")
+    }
+    func testWithThreeInTheRoomItNamesNobody() {
+        let crowded = SummaryMaterial.parse("[00:10] Макс: слово\n[00:40] Пётр: слово\n[01:10] Лена: слово")
+        let records = StructuredSummary.parse("ЗАДАЧА | - | Тебе надо передать доступ к аккаунту | - | u1",
+                                              window: 0..<3, material: crowded)
+        XCTAssertNil(records.first?.owner)
+    }
+}
+
+final class StructuredSummaryPlaceholderTests: XCTestCase {
+    /// Asked for "тема | номера", a 2B model replied "Название | 1, 5" six times and every
+    /// heading in the document read "Название".
+    func testTheWordsOfTheInstructionAreNotNames() {
+        XCTAssertNil(StructuredSummary.accepted(name: "Название"))
+        XCTAssertNil(StructuredSummary.accepted(name: " тема "))
+        XCTAssertNil(StructuredSummary.accepted(name: "Заголовок"))
+        XCTAssertEqual(StructuredSummary.accepted(name: "Названия роликов"), "Названия роликов")
+    }
+    func testAGroupingOfPlaceholdersIsRefused() {
+        let records = (1...6).map { SummaryRecord(kind: .fact, text: "Утверждение номер \($0) о своём", evidence: ["u\($0)"]) }
+        let reply = "Название | 1, 5\nНазвание | 2, 6\nНазвание | 3, 4"
+        XCTAssertTrue(StructuredSummary.organised(reply, records: records).isEmpty)
+    }
+}
+
+final class StructuredSummaryStrayTests: XCTestCase {
+    /// Putting every forgotten record under the nearest heading is how "Удержание клиентов" ended
+    /// up containing the infrastructure and the pixel checker.
+    func testARecordWithNothingInCommonGoesToItsOwnSection() {
+        let records = [
+            SummaryRecord(kind: .fact, text: "Удержание держится на тридцати процентах", evidence: ["u1"]),
+            SummaryRecord(kind: .fact, text: "Удержание упало до двадцати процентов", evidence: ["u2"]),
+            SummaryRecord(kind: .fact, text: "Домен переносим на новый тариф хостинга", evidence: ["u3"]),
+            SummaryRecord(kind: .fact, text: "Домен оплачиваем до пятницы по тарифу", evidence: ["u4"]),
+            SummaryRecord(kind: .fact, text: "Синтаксический разбор пикселей идёт квадратами", evidence: ["u5"]),
+        ]
+        let topics = StructuredSummary.organised("Удержание | 1, 2\nХостинг и домен | 3, 4", records: records)
+        XCTAssertEqual(topics.map(\.name), ["Удержание", "Хостинг и домен", "Разное"])
+        XCTAssertEqual(topics.last?.records.map(\.evidence), [["u5"]])
+    }
+    func testARecordThatFitsATopicStillJoinsIt() {
+        let records = [
+            SummaryRecord(kind: .fact, text: "Удержание держится на тридцати процентах", evidence: ["u1"]),
+            SummaryRecord(kind: .fact, text: "Удержание упало до двадцати процентов", evidence: ["u2"]),
+            SummaryRecord(kind: .fact, text: "Домен переносим на новый тариф хостинга", evidence: ["u3"]),
+            SummaryRecord(kind: .fact, text: "Домен оплачиваем до пятницы по тарифу", evidence: ["u4"]),
+            SummaryRecord(kind: .fact, text: "Удержание по тарифу считаем отдельно", evidence: ["u5"]),
+        ]
+        let topics = StructuredSummary.organised("Удержание | 1, 2\nХостинг и домен | 3, 4", records: records)
+        XCTAssertEqual(topics.count, 2, "строка про удержание нашла свою тему")
     }
 }

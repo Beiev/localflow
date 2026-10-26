@@ -1,13 +1,39 @@
 # Changelog
 
+## 0.6.0 — 2026-10-26
+
+### Конспект стало можно читать
+
+- Открывать конспект тем, о чём был разговор. Один проход по **всей** расшифровке сразу, чьё единственное дело — сквозная мысль: про что говорили и к чему пришли. Всё, что можно посчитать, по-прежнему собирается по окнам и проверяется, поэтому абзац не может ни выдумать цифру, ни назначить задачу. Он проходит проверку: длина, никаких списков и заголовков, никаких отметок времени, которых он знать не может, и каждая цифра в нём должна встречаться в сказанном. Не прошёл — вступление остаётся собранным кодом, как было.
+- Собирать темы по смыслу, а не по соседству во времени. Раньше в одну тему попадало всё, что шло подряд, и на настоящем созвоне под заголовком «Проблемы удержание» оказались структура сайта, посты в телеграме, расходы на API и бюджет на посевы. Теперь утверждения группирует модель — единственное, что ей доверено, кроме названия, — а прочитано это обратно строго: каждый номер существует и используется один раз, забытое утверждение уходит в ближайшую по словам тему, а не пропадает.
+- Писать утверждения как written text, а не как речь. Убраны «ну», «вот», «короче», «по сути» в начале и между запятыми, предложение начинается с заглавной. Документ открывался строкой «нужно набросить структуру сайта. накидать темы для постов».
+- Не повторять документ во вступлении. Оно называло участников, пересчитывало разделы и тут же цитировало первое решение и первую цифру — те же предложения появлялись абзацем ниже слово в слово.
+- Находить исполнителя там, где его назвали голосом. «Я перегоню метаданные» принадлежит тому, кто это сказал; «тебе надо передать доступ» на созвоне вдвоём — другому. Такая задача больше не теряется и из-за того, что в ней нет инфинитива.
+- Не ставить в задачи то, что задачей не является: строка, начинающаяся с «никто», «ничего», «нечего», описывает мир, а не просит что-то сделать.
+- Схлопывать два утверждения одного вида из одной и той же реплики, если они в основном об одном. Одна реплика настоящего созвона дала две задачи — «актуализировать информацию, удалив неактуальное» и «убрать всё неактуальное и оставить актуальное», — и обе доехали до таблицы.
+- Выбрасывать вопрос, который ни о чём не спрашивает: «как сейчас выглядит ситуация» требует трёх значимых слов и их не имеет.
+
+### Приложение
+
+- Даты по-русски. Русский интерфейс подписывал записи «Oct 25, 2026 at 14:37» рядом с «Созвон» и «Открытые вопросы».
+- Длительность с часами: двухчасовой созвон показывался как «127:14».
+- Созвон называется тем, чем он оказался. Разобранная запись берёт имя из своих тем, пока владелец не введёт своё — после этого к названию никто не прикасается. Список «Созвон 25 октября, 14:37» — это список файлов, а не список встреч.
+- Под названием записи — о чём она, а не первые слова распознавания.
+- Архив сгруппирован по дням: «Сегодня», «Вчера», дальше по датам.
+- Долгая обработка говорит, где она: «Готовлю конспект · 7 из 14».
+- «Не выгружать» в настройках памяти: веса остаются в памяти, и первый запуск перестаёт стоить секунды. При нехватке памяти система всё равно их освободит.
+
+## 0.5.1 — 2026-10-26
+
+- Take out the call detection that 0.5.0 added. It watched for the microphone being held by something else for half a minute and offered to record; on a machine where long dictation is normal that is a false alarm, and a meeting is marked by hand or by shortcut anyway. The feature was wrong, not the implementation, so it is gone rather than tuned: `MeetingWatch`, `AudioActivity`, the offer in the window and the menu, and the switch in Settings.
+
 ## 0.5.0 — 2026-10-26
 
 - Open the archive to your own assistant. `localflow-mcp` ships inside the application bundle and speaks MCP over stdio: four read-only tools — find recordings, list them, read one (summary, transcript, recognition, screen, follow-up letter), and find the moments that match words, each with `[мм:сс]`, the speaker and the recording it came from. Every meeting product keeps your transcripts inside its own chat; this hands the same material to the model you are already talking to, without any of it leaving the machine. There is deliberately no tool that writes, deletes or reprocesses anything: the server is driven by a model, and a model that has just read a web page should not be able to delete a recording. Setup and the exact command: [docs/mcp.md](docs/mcp.md).
-- Notice that a call has started. Two cheap local signals together — something other than LocalFlow has held the microphone for more than half a minute, and an application people hold calls in is running — and the application offers to record, as a line in the window and an entry in the menu bar. It never starts a recording by itself: a conversation recorded because a machine guessed is the thing this application exists not to do. Off with one switch in Settings.
 - Take participant names from the calendar invitation. Names proposed from the conversation need people to address each other by name, which on a first call they often never do. The invitation knows who was supposed to be there; it does not know who spoke, so what comes back is candidates to put against a voice by hand, exactly like the proposals from the conversation. The calendar is read only when the button is pressed, only for the meeting the recording overlaps, and never written to. A display name wins over an address, because the same person is usually on an invitation twice — "Лена Иванова" and `lena@example.com` were being proposed as two people.
 - Drop a Markdown copy of every condensed meeting into a folder you choose, so the notes land where you already keep notes — Obsidian, a synced folder, a repository — with no service in between. The name carries the date first so the folder sorts itself, and is the same every time, so a re-export replaces its own copy instead of leaving a trail. Written only when it would differ from what is already there: saving runs on every keystroke in the title field, and a file rewritten thirty times a sentence is how a synced folder earns a reputation. What was read off the screen is not in the copy.
 - Cut a word to its stem before searching the archive, in the full-text index and in moment ranking alike. Russian inflects and a question is almost never asked in the case the answer was spoken in: "решение" found nothing in a recording that said "решения".
-- Add a second reviewed editor weight to the catalogue, Qwen 3.5 9B 4-bit, selectable in Settings beside Gemma 4 E2B and Qwen 4B. `LOCALFLOW_EDITOR` picks one for a benchmark run without changing what the application uses.
+- Measure a bigger editor weight and keep Gemma. Qwen 3.5 9B 4-bit was pinned, downloaded and run over the same two real calls: the structured path returned an **empty document** after 25 minutes against Gemma's 78 seconds, because this build writes its reasoning instead of an answer and the extraction stage parses nothing out of it. The weight is kept out of the shipped catalogue so it cannot be selected into an empty summary; the line to measure it again is commented in `Scripts/pin-models.py`. `LOCALFLOW_EDITOR` picks a weight for a benchmark run without changing what the application uses.
 
 ## 0.4.1 — 2026-10-26
 

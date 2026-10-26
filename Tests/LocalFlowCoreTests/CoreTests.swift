@@ -317,8 +317,8 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(restored.speakers,s.speakers); XCTAssertEqual(restored.versions.first?.text,s.versions.first?.text); XCTAssertTrue(restored.pinned)
     }
     func testModelManifestIsPinnedAndChecksummed() {
-        XCTAssertEqual(ModelCatalog.packages.count,5)
-        XCTAssertEqual(Set(ModelCatalog.packages.map(\.id)), ["asr8","editor","editor-qwen","editor-qwen9","speakers"])
+        XCTAssertEqual(ModelCatalog.packages.count,4)
+        XCTAssertEqual(Set(ModelCatalog.packages.map(\.id)), ["asr8","editor","editor-qwen","speakers"])
         for package in ModelCatalog.packages {
             XCTAssertEqual(package.revision.count,40); XCTAssertFalse(package.files.isEmpty)
             for asset in package.files { XCTAssertGreaterThan(asset.size,0); XCTAssertEqual(asset.hash.count,asset.sha256 ? 64 : 40); XCTAssertFalse(asset.path.contains("..")) }

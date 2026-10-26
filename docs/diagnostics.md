@@ -93,7 +93,7 @@ build.noindex/Build/Products/Release/LocalFlowBench install editor-qwen9
 LOCALFLOW_EDITOR=editor-qwen9 build.noindex/Build/Products/Release/LocalFlowBench summary-ab SESSION_PREFIX out.json
 ```
 
-Идентификаторы весов — `editor` (Gemma 4 E2B, по умолчанию), `editor-qwen` (Qwen 4B), `editor-qwen9` (Qwen 3.5 9B). Сравнивать нужно на одном и том же подготовленном материале: `summary-ab` сам сводит мелкие голоса и применяет предложенные имена, поэтому два запуска по одной записи сопоставимы.
+Идентификаторы весов — `editor` (Gemma 4 E2B, по умолчанию) и `editor-qwen` (Qwen 4B). Кандидат должен быть в каталоге: строка для Qwen 3.5 9B лежит закомментированной в `Scripts/pin-models.py`, вместе с причиной, по которой он отклонён. Сравнивать нужно на одном и том же подготовленном материале: `summary-ab` сам сводит мелкие голоса и применяет предложенные имена, поэтому два запуска по одной записи сопоставимы.
 
 Числа идут в файл, текст конспектов — в stdout. В stdout попадает настоящая речь: не коммитить.
 

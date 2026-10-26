@@ -17,11 +17,11 @@ struct DiaryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 HStack {
-                    Text(current.createdAt.formatted(date: .complete, time: .omitted)).font(.caption).foregroundStyle(.secondary)
+                    Text(RussianDates.day(current.createdAt)).font(.caption).foregroundStyle(.secondary)
                     if wordCount > 0 { Text("· \(wordCount) слов").font(.caption).foregroundStyle(.secondary) }
                     Spacer()
                 }
-                TextField("Название заметки", text: Binding(get: { current.title }, set: { var note = current; note.title = $0; model.save(note) }))
+                TextField("Название заметки", text: Binding(get: { current.title }, set: { model.rename(current, to: $0) }))
                     .font(.title.bold()).textFieldStyle(.plain).disabled(busy)
                 TextField("О чём хотите рассказать? Короткое описание — необязательно", text: Binding(get: { current.noteDescription ?? "" }, set: { var note = current; note.noteDescription = $0; model.save(note) }), axis: .vertical)
                     .lineLimit(2...5).textFieldStyle(.plain).foregroundStyle(.secondary).disabled(busy)

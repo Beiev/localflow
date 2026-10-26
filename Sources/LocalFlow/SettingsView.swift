@@ -85,7 +85,6 @@ struct SettingsView: View {
     @AppStorage("editingStyle") private var editingStyle = ""
     @AppStorage("ownerName") private var ownerName = ""
     @AppStorage("captureScreen") private var captureScreen = false
-    @AppStorage("noticeMeetings") private var noticeMeetings = true
     @AppStorage("exportFolder") private var exportFolder = ""
     @AppStorage("editorModel") private var editorModel = "editor"
     @AppStorage("settingsPage") private var page = "general"
@@ -147,9 +146,6 @@ struct SettingsView: View {
                 }
                 Text("После обработки созвона в эту папку кладётся Markdown с конспектом и расшифровкой — чтобы заметки оказались там, где вы их и держите. Имя файла с датой впереди; повторная запись заменяет свою же копию. Текст с экрана в копию не попадает.").foregroundStyle(.secondary)
                 Divider()
-                Toggle("Замечать начатый созвон", isOn: $noticeMeetings).toggleStyle(.switch)
-                Text("Если микрофон занят другим приложением дольше полуминуты и при этом запущено приложение для созвонов, LocalFlow предложит записать — строкой в окне и в меню. Сам он запись не начинает никогда.").foregroundStyle(.secondary)
-                Divider()
                 Toggle("Читать экран во время созвона", isOn: $captureScreen).toggleStyle(.switch)
                 Text("Раз в несколько секунд снимается кадр экрана — всего дисплея, а не только окна созвона, — с него снимается текст, и в запись попадают только этот текст и заголовок окна: не видео и не сами кадры. Так в конспекте появляется, что показывали. Окна самого LocalFlow исключены. Выключается здесь и вместе с паузой записи; удаляется вместе с записью. В документ, который копируется целиком, текст с экрана не попадает — только названия окон и время.").foregroundStyle(.secondary)
             }
@@ -176,13 +172,13 @@ struct SettingsView: View {
             card("Память и хранение") {
                 HStack {
                     Text("Выгрузить распознаватель"); Spacer()
-                    Picker("Выгрузить распознаватель", selection: $asrIdle) { Text("Через 30 секунд").tag(30); Text("Через 2 минуты").tag(120); Text("Через 5 минут").tag(300) }.labelsHidden().frame(width: 180)
+                    Picker("Выгрузить распознаватель", selection: $asrIdle) { Text("Через 30 секунд").tag(30); Text("Через 2 минуты").tag(120); Text("Через 5 минут").tag(300); Text("Не выгружать").tag(-1) }.labelsHidden().frame(width: 180)
                 }
                 HStack {
                     Text("Выгрузить редактор"); Spacer()
-                    Picker("Выгрузить редактор", selection: $editorIdle) { Text("Сразу").tag(1); Text("Через 1 минуту").tag(60); Text("Через 3 минуты").tag(180) }.labelsHidden().frame(width: 180)
+                    Picker("Выгрузить редактор", selection: $editorIdle) { Text("Сразу").tag(1); Text("Через 1 минуту").tag(60); Text("Через 3 минуты").tag(180); Text("Не выгружать").tag(-1) }.labelsHidden().frame(width: 180)
                 }
-                Text("После выгрузки первый запуск занимает больше времени.").foregroundStyle(.secondary)
+                Text("После выгрузки первый запуск занимает больше времени: холодная загрузка редактора — секунды, прогретая — доли секунды. «Не выгружать» держит веса в памяти (редактор — около 3,5 ГБ) и снимает эту задержку; при нехватке памяти система всё равно освободит их.").foregroundStyle(.secondary)
                 Divider()
                 Text("Аудио — 30 дней, закреплённое — без срока. Тексты сохраняются до удаления.").foregroundStyle(.secondary)
             }
