@@ -109,6 +109,15 @@ build.noindex/Build/Products/Release/LocalFlowBench summary-sweep /tmp/localflow
 
 В stdout попадают названия тем — это содержание настоящих разговоров. Не выкладывать.
 
+Числа говорят, сработала ли защита; читается ли документ, говорит только документ. `LOCALFLOW_SWEEP_DIR`
+заставляет прогон выписать каждый конспект файлом `<первые 8 знаков id>.md` в указанную папку:
+
+```bash
+LOCALFLOW_SWEEP_DIR=/tmp/localflow-docs build.noindex/Build/Products/Release/LocalFlowBench summary-sweep /tmp/localflow-sweep.json
+```
+
+Это настоящие разговоры целиком. Папку указывать вне репозитория и удалять после чтения.
+
 ## Проверка MCP-сервера
 
 ```bash
