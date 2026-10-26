@@ -119,7 +119,12 @@ public final class Store: @unchecked Sendable {
         } catch { try? execute("ROLLBACK"); throw error }
     }
     public func search(_ query: String, limit: Int = 8) throws -> [SearchHit] {
-        let tokens = query.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 1 }
+        // Cut to a stem before the prefix match: full-text search with a trailing `*` finds
+        // "решения" from "решени", but nothing finds it from "решение" — and a question is almost
+        // never asked in the case the answer was spoken in.
+        let tokens = query.components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { $0.count > 1 }
+            .map(ArchiveSearch.stem)
         guard !tokens.isEmpty else { return [] }
         lock.lock(); defer { lock.unlock() }
         let s = try statement("SELECT sessions.data FROM search JOIN sessions ON sessions.id=search.id WHERE search MATCH ? ORDER BY bm25(search) LIMIT ?"); defer { sqlite3_finalize(s) }

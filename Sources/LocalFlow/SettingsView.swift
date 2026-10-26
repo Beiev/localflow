@@ -85,6 +85,8 @@ struct SettingsView: View {
     @AppStorage("editingStyle") private var editingStyle = ""
     @AppStorage("ownerName") private var ownerName = ""
     @AppStorage("captureScreen") private var captureScreen = false
+    @AppStorage("noticeMeetings") private var noticeMeetings = true
+    @AppStorage("exportFolder") private var exportFolder = ""
     @AppStorage("editorModel") private var editorModel = "editor"
     @AppStorage("settingsPage") private var page = "general"
     @StateObject private var recorder = ShortcutRecorder()
@@ -128,6 +130,25 @@ struct SettingsView: View {
                 Text("Повторное нажатие завершает запись; Esc отменяет. Сочетания с ⌘ срабатывают только с левого ⌘, чтобы правый ⌘ продолжал работать в приложениях.").foregroundStyle(.secondary)
                 Divider()
                 Text("Созвоны: системный звук и отдельная дорожка микрофона. Shure MV7+ выбирается автоматически, когда подключён.").foregroundStyle(.secondary)
+                Divider()
+                HStack {
+                    Text("Копия конспекта в папку")
+                    Spacer()
+                    Text(exportFolder.isEmpty ? "не копируется" : (exportFolder as NSString).lastPathComponent)
+                        .foregroundStyle(.secondary).lineLimit(1).truncationMode(.head)
+                    Button("Выбрать…") {
+                        let picker = NSOpenPanel()
+                        picker.canChooseDirectories = true
+                        picker.canChooseFiles = false
+                        picker.prompt = "Выбрать"
+                        if picker.runModal() == .OK, let url = picker.url { exportFolder = url.path }
+                    }
+                    if !exportFolder.isEmpty { Button("Не копировать") { exportFolder = "" } }
+                }
+                Text("После обработки созвона в эту папку кладётся Markdown с конспектом и расшифровкой — чтобы заметки оказались там, где вы их и держите. Имя файла с датой впереди; повторная запись заменяет свою же копию. Текст с экрана в копию не попадает.").foregroundStyle(.secondary)
+                Divider()
+                Toggle("Замечать начатый созвон", isOn: $noticeMeetings).toggleStyle(.switch)
+                Text("Если микрофон занят другим приложением дольше полуминуты и при этом запущено приложение для созвонов, LocalFlow предложит записать — строкой в окне и в меню. Сам он запись не начинает никогда.").foregroundStyle(.secondary)
                 Divider()
                 Toggle("Читать экран во время созвона", isOn: $captureScreen).toggleStyle(.switch)
                 Text("Раз в несколько секунд снимается кадр экрана — всего дисплея, а не только окна созвона, — с него снимается текст, и в запись попадают только этот текст и заголовок окна: не видео и не сами кадры. Так в конспекте появляется, что показывали. Окна самого LocalFlow исключены. Выключается здесь и вместе с паузой записи; удаляется вместе с записью. В документ, который копируется целиком, текст с экрана не попадает — только названия окон и время.").foregroundStyle(.secondary)

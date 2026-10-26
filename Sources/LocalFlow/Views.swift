@@ -90,6 +90,7 @@ struct MainView: View {
             }.padding(20).navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 280)
         } detail: {
             VStack(spacing: 0) {
+                if model.callNoticed { noticedCallBar }
                 if model.isRecording || model.processing || model.isStarting { recordingBar }
                 Group {
                     if model.section == "settings" { SettingsView(model: model) }
@@ -114,6 +115,25 @@ struct MainView: View {
             Label(name, systemImage: icon).frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8).padding(.horizontal, 10).contentShape(Rectangle())
         }.foregroundStyle(.primary)
     }
+    /// An offer, never an action: the microphone is busy somewhere and a calling application is
+    /// running, which is a guess, and a guess must not start recording somebody's conversation.
+    private var noticedCallBar: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "person.2.wave.2.fill").foregroundStyle(FlowTheme.accent)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Похоже, идёт созвон").font(.callout.weight(.semibold))
+                Text("Микрофон занят другим приложением. Запись не началась.").font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Не сейчас") { model.dismissNoticedCall() }.buttonStyle(.plain).foregroundStyle(.secondary)
+            Button("Записать · \(model.meetingLabel)") { model.recordNoticedCall() }
+                .buttonStyle(.borderedProminent).tint(FlowTheme.accent)
+        }
+        .padding(.horizontal, 20).padding(.vertical, 12)
+        .background(FlowTheme.accent.opacity(0.10))
+        .overlay(alignment: .bottom) { Divider() }
+    }
+
     private var recordingBar: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {

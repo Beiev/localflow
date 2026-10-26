@@ -1,16 +1,32 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleIdentifier</key><string>com.beiev.localflow</string>
-<key>CFBundleExecutable</key><string>LocalFlow</string>
-<key>CFBundleIconFile</key><string>LocalFlow.icns</string>
-<key>CFBundleName</key><string>LocalFlow</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.4.1</string>
-<key>CFBundleVersion</key><string>20</string>
-<key>LSMinimumSystemVersion</key><string>15.0</string>
-<key>NSMicrophoneUsageDescription</key><string>LocalFlow записывает вашу речь для локальной расшифровки.</string>
-<key>NSScreenCaptureUsageDescription</key><string>LocalFlow записывает системный звук для расшифровки созвона.</string>
-<key>NSAudioCaptureUsageDescription</key><string>Для локальной записи голоса собеседников.</string>
-<key>NSHighResolutionCapable</key><true/>
-</dict></plist>
+<plist version="1.0">
+<dict>
+	<key>CFBundleExecutable</key>
+	<string>LocalFlow</string>
+	<key>CFBundleIconFile</key>
+	<string>LocalFlow.icns</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.beiev.localflow</string>
+	<key>CFBundleName</key>
+	<string>LocalFlow</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.5.0</string>
+	<key>CFBundleVersion</key>
+	<string>21</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>15.0</string>
+	<key>NSAudioCaptureUsageDescription</key>
+	<string>Для локальной записи голоса собеседников.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>LocalFlow берёт из встречи имена участников, чтобы предложить их для голосов в записи. Календарь читается только по вашей команде и только на чтение.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>LocalFlow записывает вашу речь для локальной расшифровки.</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>LocalFlow записывает системный звук для расшифровки созвона.</string>
+</dict>
+</plist>

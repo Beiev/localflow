@@ -16,6 +16,9 @@ LocalFlow is an open, privacy-first alternative to Wispr Flow built for Apple Si
 - **The record itself, next to the summary.** A meeting opens on three tabs — the condensed summary, a cleaned line-by-line transcript, and the raw recognition — and each copies to the clipboard in one click, as Markdown or without markup. Condensed documents render as formatting rather than asterisks, and every `[mm:ss]` in them is a control that plays that moment. The cleaned transcript is produced a few turns at a time behind a guard that compares the turns before and after: a window the model shortened, merged or renumbered is delivered as recognized instead of accepted, so polish can be lost on a stretch but the record cannot.
 - **Voices get the names people used.** The microphone track is you; the remote voices are proposed from the conversation itself, because a name spoken right after a comma is aimed at somebody else in the room — two sides addressing each other therefore name each other, while a client discussed by one side only is named by nobody and stays out. Each proposal comes with the moment that says so, and accepting it is one click. Diarizer identities holding under 5 % of the remote speech *and* under a minute of it are folded into the voice beside them in time: measured over eleven real meetings, that turned three identities into one on a two-person call and left a genuinely quiet participant of a nine-person call alone ([docs/validation.md](docs/validation.md)).
 - **What was on screen, folded into the notes (off by default).** During a meeting LocalFlow can read the display — the whole display minus its own windows, not only the call's window: one frame every three seconds on a second output of the stream that already carries the system audio, reduced to a 16×16 thumbnail, and only a frame that differs from the last one *read* is recognized at all. What is kept is the text on it and the window title — never video, never the frames themselves — as moments with a start and an end, because a slide that was up for four minutes is a span and not an instant. Those moments carry their own citation identifiers, so a line in the summary can point at a document that was shown exactly as it points at a sentence that was said, and the recording gains a screen tab and a "Что показывали" section. The app's own windows are excluded from the picture, the capture pauses with the recording, and everything read is deleted with the session's audio. Screen text reaches the model as data, with the prompt's own markers neutralised in it, and nothing read off a screen can become a decision or a task — only an observation, which has to cite the moment it was on screen. Copying the whole meeting copies the window titles and not what they said.
+- **Your archive, answerable by your own assistant.** An MCP server ships inside the bundle: four read-only tools over stdio that let Claude, or anything else speaking MCP, search your recordings, read a summary or a transcript, and pull the exact moments that match a question — each with `[mm:ss]`, the speaker, and the recording it came from. Nothing leaves the machine, and nothing in the server can change or delete a recording. [docs/mcp.md](docs/mcp.md).
+- **It notices a call has started.** Something other than LocalFlow has held the microphone for more than half a minute, and an application people hold calls in is running: the window and the menu bar offer to record it. It never starts recording on its own — a conversation recorded because a machine guessed is the thing this application exists not to do.
+- **A copy where you already keep notes.** Point LocalFlow at a folder and every condensed meeting lands there as Markdown — dated, deterministically named, rewritten only when it changed. No service in between.
 - **A memory that is actually yours.** A personal dictionary (heard → preferred spelling) is applied before every edit; familiar voices can be saved and recognized across meetings. Ask the archive a question and every claim comes with a citation and a playable timestamp.
 - **Engineered for low load.** Models load on demand and unload automatically after idle (ASR after 2 min, editor after 1 min by default). A dictated sentence edits in ~1–2 s on an M3 Pro; nothing runs in the background while you're silent.
 
@@ -42,7 +45,7 @@ Requirements: Apple Silicon Mac, Xcode 26.6 with the Metal toolchain, [XcodeGen]
 brew install xcodegen
 xcodebuild -downloadComponent MetalToolchain
 Scripts/build.sh     # xcodegen + xcodebuild Release + local signing
-Scripts/test.sh      # 242 unit/interface tests; no model weights needed
+Scripts/test.sh      # 273 unit/interface tests; no model weights needed
 Scripts/install.sh   # installs to ~/Applications/LocalFlow.app
 ```
 
@@ -68,13 +71,14 @@ Archive upgrades are transactional and create a local SQLite backup before chang
 Sources/LocalFlowCore/   engine: audio capture, ASR/LLM/diarization, safety guards, SQLite store
 Sources/LocalFlow/       SwiftUI app: overlay panel, archive, diary, settings
 Sources/LocalFlowBench/  CLI benchmarking harness (ASR/editor/diarization pipelines)
+Sources/LocalFlowMCP/    read-only MCP server over the archive (ships inside the app bundle)
 Scripts/                 build, test, install, signing, model pinning, editor bake-off
 docs/                    architecture, plan, validation log, benchmarks, product strategy
 ```
 
 ## Status & roadmap
 
-v0.4.1 — daily-driver quality for the author's setup (M3 Pro / 18 GB, macOS 26): dictation, notes, meetings with a code-assembled summary and optional screen reading, archive Q&A, model choice. Known limits: diarization can merge similar voices; screen reading has never been run on a live meeting, so there are no load or OCR-quality numbers for it; latency targets on real speech are still being measured; calendar/Slack/MCP integrations and mobile are future work. Full details: [docs/plan.md](docs/plan.md), [docs/validation.md](docs/validation.md), [where it stands against the meeting-notes market](docs/competition-2026-10.md), [docs/product-strategy.md](docs/product-strategy.md).
+v0.5.0 — daily-driver quality for the author's setup (M3 Pro / 18 GB, macOS 26): dictation, notes, meetings with a code-assembled summary and optional screen reading, archive Q&A, model choice. Known limits: diarization can merge similar voices; screen reading has never been run on a live meeting, so there are no load or OCR-quality numbers for it; latency targets on real speech are still being measured; calendar/Slack/MCP integrations and mobile are future work. Full details: [docs/plan.md](docs/plan.md), [docs/validation.md](docs/validation.md), [where it stands against the meeting-notes market](docs/competition-2026-10.md), [docs/product-strategy.md](docs/product-strategy.md).
 
 ## License
 

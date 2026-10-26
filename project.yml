@@ -44,6 +44,18 @@ targets:
       base:
         SWIFT_VERSION: '5.0'
         CODE_SIGN_IDENTITY: '-'
+  LocalFlowMCP:
+    type: tool
+    platform: macOS
+    sources:
+      - Sources/LocalFlowMCP
+    dependencies:
+      - package: LocalFlowCore
+        product: LocalFlowCore
+    settings:
+      base:
+        SWIFT_VERSION: '5.0'
+        CODE_SIGN_IDENTITY: '-'
   LocalFlowCoreTests:
     type: bundle.unit-test
     platform: macOS

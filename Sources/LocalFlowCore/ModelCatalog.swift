@@ -28,7 +28,10 @@ public enum ModelCatalog {
     public static func package(_ id: String) -> ModelPackage { packages.first { $0.id == id }! }
     /// Selected editing model; the Gemma package is the reviewed default.
     public static func editorPackageID() -> String {
-        let id = UserDefaults.standard.string(forKey: "editorModel") ?? "editor"
+        // The environment wins, so a bake-off can run a candidate weight over real material
+        // without changing what the application is set to use.
+        let id = ProcessInfo.processInfo.environment["LOCALFLOW_EDITOR"]
+            ?? UserDefaults.standard.string(forKey: "editorModel") ?? "editor"
         return packages.contains { $0.id == id } ? id : "editor"
     }
 }

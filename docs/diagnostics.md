@@ -83,3 +83,29 @@ the owner did not mean to share is read if it is in front — pausing the record
 reading, and the application's own windows are the only ones excluded by construction. And text
 recognition runs only in the languages this Mac reports as supported; if Russian is not among them
 the journal simply stays empty rather than filling with nonsense.
+
+## Сравнение весов редактора
+
+`LOCALFLOW_EDITOR` подменяет вес для одного запуска и не трогает настройку приложения:
+
+```bash
+build.noindex/Build/Products/Release/LocalFlowBench install editor-qwen9
+LOCALFLOW_EDITOR=editor-qwen9 build.noindex/Build/Products/Release/LocalFlowBench summary-ab SESSION_PREFIX out.json
+```
+
+Идентификаторы весов — `editor` (Gemma 4 E2B, по умолчанию), `editor-qwen` (Qwen 4B), `editor-qwen9` (Qwen 3.5 9B). Сравнивать нужно на одном и том же подготовленном материале: `summary-ab` сам сводит мелкие голоса и применяет предложенные имена, поэтому два запуска по одной записи сопоставимы.
+
+Числа идут в файл, текст конспектов — в stdout. В stdout попадает настоящая речь: не коммитить.
+
+## Проверка MCP-сервера
+
+```bash
+printf '%s\n' \
+ '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
+ '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+ '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"list_recordings","arguments":{"limit":3}}}' \
+ | ~/Applications/LocalFlow.app/Contents/MacOS/localflow-mcp
+```
+
+Сервер открывает архив только на чтение и работает одновременно с приложением. Ответы `list_recordings` и `search_recordings` содержат названия записей, `read_recording` и `find_moments` — их содержимое: это настоящие разговоры, и вывод этих команд никуда не выкладывается.
+

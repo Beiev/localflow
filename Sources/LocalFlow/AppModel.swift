@@ -39,6 +39,9 @@ final class AppModel: ObservableObject {
     @Published var dictationLabel = ShortcutSpec.dictationDefault.label
     @Published var meetingLabel = ShortcutSpec.meetingDefault.label
     @Published var section = "archive"
+    /// A call looks to be happening and this application is not recording it. Never acted on by
+    /// itself: it draws an offer, and the owner presses something or does not.
+    @Published var callNoticed = false
     let store: Store
     let speech = SpeechEngine()
     let editor = TextEngine()
@@ -77,6 +80,9 @@ final class AppModel: ObservableObject {
     /// Reading the shared screen during a call is off until asked for: it is a record of what was
     /// on screen, which is not what somebody starts a recording expecting.
     var readsScreenInMeetings: Bool { UserDefaults.standard.bool(forKey: "captureScreen") }
+    /// On unless the owner turns it off, because the cost of being wrong is one line of interface
+    /// and the cost of being right is a call that would otherwise not have been recorded.
+    var noticesMeetings: Bool { UserDefaults.standard.object(forKey: "noticeMeetings") as? Bool ?? true }
     func createNote() {
         guard active == nil, !processing, !isStarting else { return }
         let note = RecordingSession.draftNote()
@@ -86,6 +92,40 @@ final class AppModel: ObservableObject {
     func startNote(_ note: RecordingSession) { start(.note, existing: note) }
     var selectedSession: RecordingSession? { sessions.first { $0.id == selection } }
     var isRecording: Bool { active != nil && !processing }
+    private var watch = MeetingWatch()
+    private var meetingWatchTimer: Timer?
+
+    /// Looks at the machine, not at the microphone: whether something else is holding the input
+    /// and whether an application people hold calls in is running.
+    func noticeCall() {
+        // Turned off: forget the run in progress too, so turning it back on half an hour into a
+        // call does not greet the owner with an offer the watch never actually waited for.
+        guard noticesMeetings else {
+            watch = MeetingWatch()
+            callNoticed = false
+            return
+        }
+        let busy = isRecording || processing || isStarting
+        // The device property is a read of one value; the process list is not. Asked in this
+        // order, the second question is only asked while somebody is actually holding the
+        // microphone, which is a small part of a day.
+        let inputBusy = AudioActivity.inputIsBusy()
+        let offer = watch.update(inputBusy: inputBusy,
+                                 conferencing: inputBusy && AudioActivity.conferencingIsRunning(),
+                                 busy: busy)
+        if callNoticed != offer { callNoticed = offer }
+    }
+    /// Record the call the offer is about. The offer never starts anything by itself.
+    func recordNoticedCall() {
+        watch.answer()
+        callNoticed = false
+        if !isRecording && !processing { toggleMeeting() }
+    }
+    func dismissNoticedCall() {
+        watch.answer()
+        callNoticed = false
+    }
+
     init() throws {
         try AppPaths.create()
         store = try Store()
@@ -100,6 +140,13 @@ final class AppModel: ObservableObject {
             await self.updateMetrics()
         } }
         pressure.resume(); pressureSource = pressure
+        // Five seconds is far below the twenty-five the watch waits for, and the two questions it
+        // asks are a property read and a process list.
+        let noticing = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.noticeCall() }
+        }
+        noticing.tolerance = 2
+        meetingWatchTimer = noticing
         capture.onFrame = { [weak self] frame in Task { @MainActor in self?.receive(frame) } }
         capture.onError = { [weak self] id, message in Task { @MainActor in
             guard let self, self.active?.id == id, !self.isCancelling else { return }
@@ -640,7 +687,36 @@ final class AppModel: ObservableObject {
             await scheduleUnload()
         }
     }
-    func save(_ session: RecordingSession) { do { try store.save(session); refresh() } catch { self.error = error.localizedDescription } }
+    func save(_ session: RecordingSession) {
+        do { try store.save(session); refresh() } catch { self.error = error.localizedDescription }
+        exportCopy(session)
+    }
+    /// The folder the owner keeps notes in, when they have asked for a copy to land there.
+    var exportFolder: URL? {
+        UserDefaults.standard.string(forKey: "exportFolder").flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+    }
+    /// A Markdown copy of a condensed meeting, written where the owner's other notes live.
+    ///
+    /// Written only when it would differ from what is already there: `save` runs on every keystroke
+    /// in the title field, and a file rewritten thirty times a sentence is how a synced folder
+    /// earns a reputation. The name is deterministic, so this replaces its own previous copy
+    /// rather than leaving a trail of them.
+    private func exportCopy(_ session: RecordingSession) {
+        guard session.kind == .meeting, session.summary != nil, let folder = exportFolder else { return }
+        let url = folder.appendingPathComponent(ArchiveExport.filename(for: session))
+        let document = session.shareableDocument
+        if let existing = try? String(contentsOf: url, encoding: .utf8), existing == document { return }
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try document.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            // Said once per run: a folder that has gone away would otherwise report on every save.
+            guard !exportFailed else { return }
+            exportFailed = true
+            self.error = "Копия конспекта не записалась в выбранную папку: " + error.localizedDescription
+        }
+    }
+    private var exportFailed = false
     func delete(_ session: RecordingSession) { do { try store.delete(session.id); refresh() } catch { self.error = error.localizedDescription } }
     func addWord(_ heard: String, _ preferred: String) { guard !heard.isEmpty, !preferred.isEmpty else { return }; do { try store.save(DictionaryEntry(heard: heard, preferred: preferred)); refresh() } catch { self.error = error.localizedDescription } }
     /// The owner's own name, remembered across meetings once confirmed: it is the same person
