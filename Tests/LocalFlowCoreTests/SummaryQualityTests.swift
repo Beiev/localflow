@@ -254,3 +254,27 @@ final class SummaryQualityTopicTests: XCTestCase {
         XCTAssertEqual(score.tasksWithGenericOwner, 1)
     }
 }
+
+final class SummaryOpeningQuoteTests: XCTestCase {
+    /// The document's own counts are written as a quote so the interface can draw them apart from
+    /// the paragraph. They are still the opening, and the opening still has to say something only
+    /// this meeting could say.
+    func testCountsWrittenAsAQuoteStillCountAsTheOpening() {
+        let document = """
+        ## О чём
+
+        Разговор о порогах и о том, что делать с просевшим удержанием.
+
+        > Участники: Паша, Лена. Решения: 2. Задачи: 0. Открытые вопросы: 0.
+
+        ## Задачи
+
+        | Кто | Что | Срок |
+        |---|---|---|
+        | Лена | Перенести домен | пятница |
+        """
+        let score = SummaryQuality.score(document, source: "[00:10] Паша: слово", duration: 100, speakers: ["Паша", "Лена"])
+        XCTAssertTrue(score.openingIsSpecific, "имена участников в этой строке — часть вступления")
+        XCTAssertEqual(score.tasks, 1)
+    }
+}

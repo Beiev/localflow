@@ -289,6 +289,46 @@ struct Bench {
                                  value(\.citationValidity), value(\.numberFidelity), value(\.numberCoverage), value(\.ownerClarity)))
                 }
                 print("specific_openings=\(scores.filter(\.openingIsSpecific).count)/\(scores.count)")
+            case "summary-sweep":
+                // Every meeting in the archive through the current condensing path, to see how
+                // often each guard fires on real material rather than on the two calls that get
+                // looked at. Numbers to the file, nothing written back.
+                let store = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"), readOnly: true)
+                let editor = TextEngine()
+                var rows: [[String: Any]] = []
+                for stored in try store.sessions() where stored.kind == .meeting {
+                    guard !stored.segments.isEmpty else { continue }
+                    var prepared = stored.foldingMinorIdentities()
+                    for proposal in SpeakerNaming.proposals(for: prepared) where (prepared.speakers[proposal.id] ?? "").isEmpty {
+                        prepared.speakers[proposal.id] = proposal.name
+                    }
+                    let source = prepared.referencedText
+                    guard source.count > 400 else { continue }
+                    let started = Date()
+                    let result = try await editor.edit(source, mode: .summary, dictionary: [], screen: prepared.screen)
+                    let elapsed = Date().timeIntervalSince(started)
+                    let score = SummaryQuality.score(result.text, source: source, duration: prepared.duration,
+                                                     speakers: Array(prepared.speakers.values.filter { !$0.isEmpty }))
+                    let topics = RichText.blocks(result.text).compactMap { block -> String? in
+                        if case .heading(let level, let text) = block, level > 2 { return text }
+                        return nil
+                    }
+                    let narrative = result.text.contains("## По темам") && !topics.isEmpty
+                    print("\(prepared.id.uuidString.prefix(8)) \(String(format: "%5.1f", prepared.duration / 60))m topics=\(topics.count) guarded=\(result.guarded) calls=\(result.proposals.count) \(score.line) elapsed_s=\(String(format: "%.1f", elapsed))")
+                    if !topics.isEmpty { print("    темы: " + topics.joined(separator: " · ")) }
+                    rows.append(["id": String(prepared.id.uuidString.prefix(8)), "minutes": prepared.duration / 60,
+                                 "topics": topics.count, "guarded": result.guarded, "calls": result.proposals.count,
+                                 "characters": score.characters, "purity": score.sectionPurity,
+                                 "number_fidelity": score.numberFidelity, "number_coverage": score.numberCoverage,
+                                 "tasks": score.tasks, "generic_owner": score.tasksWithGenericOwner,
+                                 "opening_specific": score.openingIsSpecific, "sectioned": narrative,
+                                 "elapsed_s": elapsed])
+                }
+                await editor.unload()
+                let sweepOut = args.count >= 2 ? args[1] : "/tmp/localflow-summary-sweep.json"
+                try JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted])
+                    .write(to: URL(fileURLWithPath: sweepOut))
+                print("Готово: \(rows.count) созвонов → \(sweepOut)")
             case "summary-ab":
                 // Runs both condensing strategies over the same prepared material and scores them,
                 // so an architecture win can be told apart from a model win. Nothing is written

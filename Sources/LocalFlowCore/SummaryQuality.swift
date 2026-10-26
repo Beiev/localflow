@@ -151,7 +151,11 @@ public enum SummaryQuality {
             case .table(_, let rows):
                 guard let section else { continue }
                 bulletsBySection[section, default: []].append(contentsOf: rows.map { $0.joined(separator: " ") })
-            case .quote, .divider: continue
+            // A quote inside the opening is part of the opening — the document's own counts are
+            // written as one so the interface can draw them apart from the paragraph.
+            case .quote(let text):
+                if section == .opening || section == nil { opening.append(RichText.inline(text)) }
+            case .divider: continue
             }
         }
 

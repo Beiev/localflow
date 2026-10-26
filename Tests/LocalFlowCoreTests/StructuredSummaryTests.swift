@@ -257,7 +257,7 @@ final class StructuredSummaryDocumentTests: XCTestCase {
         // One extraction and one whole-conversation paragraph. The paragraph here comes back as a
         // record line, which is not a paragraph, so the guard refuses it and the opening is the
         // assembled one — which is exactly the fallback this asserts.
-        XCTAssertEqual(calls, 2, "извлечение и один проход по всему разговору")
+        XCTAssertEqual(calls, 3, "извлечение, переписывание утверждений и проход по всему разговору")
         XCTAssertTrue(result.text.contains("Решения: 1"))
         XCTAssertTrue(result.text.contains("Участники: Паша, Лена"))
         // The decision itself is a few lines below. The first version quoted it here as well, and
@@ -280,11 +280,14 @@ final class StructuredSummaryDocumentTests: XCTestCase {
             XCTFail("expected cancellation")
         } catch { XCTAssertTrue(error is CancellationError) }
     }
-    /// Every extraction's reply is kept, so what the model actually said can still be inspected.
+    /// Every reply the model gave is kept, so what it actually said can still be inspected — and
+    /// so the count of them is the real cost of a summary. A reply a guard refused is still a
+    /// reply: here the whole-conversation paragraph came back as a record line and was thrown
+    /// away, which is why only the extraction and the rewrite are recorded.
     func testProposalsAreRecorded() async throws {
         let stub = Stub { _, _, _ in "РЕШЕНИЕ | Подняли первый порог до двух с половиной | u2" }
         let result = try await run(stub)
-        XCTAssertEqual(result.proposals.count, 1)
+        XCTAssertEqual(result.proposals.count, 2)
     }
 }
 
@@ -578,7 +581,7 @@ final class StructuredSummaryTopicTests: XCTestCase {
             try await stub.respond(prompt, instructions)
         }
         let calls = await stub.calls
-        XCTAssertEqual(calls, 2, "одна тема — значит называть нечего; второй вызов это проход по всему разговору")
+        XCTAssertEqual(calls, 3, "извлечение, переписывание и проход по всему разговору; группировка на двух записях не запускается")
         XCTAssertTrue(result.text.contains("## Решения"))
         XCTAssertFalse(result.text.contains("## По темам"))
     }
@@ -887,5 +890,64 @@ final class StructuredSummaryStrayTests: XCTestCase {
         ]
         let topics = StructuredSummary.organised("Удержание | 1, 2\nХостинг и домен | 3, 4", records: records)
         XCTAssertEqual(topics.count, 2, "строка про удержание нашла свою тему")
+    }
+}
+
+/// Speech into writing, line by line, with every line checked against the one it replaces.
+final class StructuredSummaryPolishTests: XCTestCase {
+    private let records = [
+        SummaryRecord(kind: .fact, text: "У нас было 4, потенциальных клиента, из которых 3 что-то заказали", evidence: ["u1"]),
+        SummaryRecord(kind: .decision, text: "Решили не переносить запуск на следующую неделю", evidence: ["u2"]),
+    ]
+
+    func testAWrittenRewriteIsTaken() {
+        let result = StructuredSummary.applying("1. Из 4 потенциальных клиентов 3 что-то заказали", to: records)
+        XCTAssertEqual(result[0].text, "Из 4 потенциальных клиентов 3 что-то заказали")
+        XCTAssertEqual(result[1].text, records[1].text, "строку, которой не было в ответе, никто не трогает")
+    }
+    /// The figures are the statement. A rewrite that changes one is a different statement.
+    func testARewriteThatChangesAFigureIsRefused() {
+        let result = StructuredSummary.applying("1. Из 5 потенциальных клиентов 3 что-то заказали", to: records)
+        XCTAssertEqual(result[0].text, records[0].text)
+    }
+    func testARewriteThatDropsTheNegationIsRefused() {
+        let result = StructuredSummary.applying("2. Решили перенести запуск на следующую неделю", to: records)
+        XCTAssertEqual(result[1].text, records[1].text)
+    }
+    func testARewriteThatSaysSomethingElseIsRefused() {
+        let result = StructuredSummary.applying("2. Обсудили сроки и разошлись без решения", to: records)
+        XCTAssertEqual(result[1].text, records[1].text)
+    }
+    func testARewriteThatGrowsIsRefused() {
+        let long = "2. " + records[1].text + " и подробно обсудили все связанные с этим обстоятельства"
+        XCTAssertEqual(StructuredSummary.applying(long, to: records)[1].text, records[1].text)
+    }
+    func testANumberOutsideTheListIsIgnored() {
+        XCTAssertEqual(StructuredSummary.applying("9. Что-то про девятое утверждение", to: records).map(\.text),
+                       records.map(\.text))
+    }
+    /// The rewrite goes through the same written-sentence rules as everything else.
+    func testTheRewriteIsStillWrittenLikeASentence() {
+        let result = StructuredSummary.applying("1. ну из 4 потенциальных клиентов 3 заказали", to: records)
+        XCTAssertEqual(result[0].text, "Из 4 потенциальных клиентов 3 заказали")
+    }
+}
+
+final class StructuredSummaryTaskTableTests: XCTestCase {
+    private let material = SummaryMaterial.parse("[00:10] Макс: слово\n[00:40] Пётр: слово")
+
+    /// On real calls almost no task is given a deadline out loud, and a column that is a dash all
+    /// the way down is a column of nothing.
+    func testTheDeadlineColumnAppearsOnlyWhenSomethingHasOne() {
+        let undated = [SummaryRecord(kind: .task, text: "Перенести домен", owner: "Макс", evidence: ["u1"])]
+        let document = StructuredSummary.assemble(undated, opening: "Вступление.", material: material)
+        XCTAssertTrue(document.contains("| Кто | Что |"))
+        XCTAssertFalse(document.contains("Срок"))
+
+        let dated = undated + [SummaryRecord(kind: .task, text: "Собрать структуру", due: "пятница", evidence: ["u2"])]
+        let withDates = StructuredSummary.assemble(dated, opening: "Вступление.", material: material)
+        XCTAssertTrue(withDates.contains("| Кто | Что | Срок |"))
+        XCTAssertTrue(withDates.contains("| пятница |"))
+        XCTAssertTrue(withDates.contains("| — |"), "у задачи без срока прочерк на месте")
     }
 }
