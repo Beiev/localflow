@@ -783,6 +783,9 @@ public enum StructuredSummary {
     public static let fewestTopicRecords = 2
     /// More headings than this stop being a structure and become a list again.
     public static let mostTopics = 6
+    /// Fewer surviving topics than this and the section claims a structure the document has not
+    /// got, so there is none: each topic contributes a heading and a passage to the section.
+    public static let fewestTopics = 2
     public static let longestTopicName = 48
 
     static func topics(for records: [SummaryRecord], material: SummaryMaterial,
@@ -1021,9 +1024,13 @@ public enum StructuredSummary {
                 written += ["### " + topic.name, body]
                 grouped += topic.records.filter { $0.kind == .fact }
             }
-            // The heading only goes in if something goes under it; an empty section is the kind
-            // of padding the flat document was criticised for.
-            if !written.isEmpty { parts += ["## По темам"] + written }
+            // Two subjects or none. Once the decisions moved into their own list the topics carry
+            // the state of things only, and on a real call that left one surviving topic of five
+            // beside a flat list of eight statements — a heading that claims a structure the
+            // document has not got. With fewer than two, everything falls through to the flat
+            // heading and the reader gets one list instead of a section and a half.
+            if written.count >= 2 * fewestTopics { parts += ["## По темам"] + written }
+            else { grouped = [] }
         }
         // A measurement with a figure in it is what the section is for; the rest follows it, and
         // within each group the order of the conversation is kept. The first version compared only

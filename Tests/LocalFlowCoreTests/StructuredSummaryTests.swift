@@ -625,8 +625,11 @@ final class StructuredSummaryTopicTests: XCTestCase {
             record(.task, "Перенести домен на новый тариф", "u4"),
             record(.question, "Чем закрывать просевшее удержание", "u2"),
             record(.fact, "Второй порог никто не трогал с весны", "u3"),
+            record(.fact, "Домен продлён до следующего марта", "u4"),
+            record(.fact, "Тариф хостинга не менялся год", "u2"),
         ]
-        let topics = [SummaryTopic(name: "Удержание", records: [records[0], records[1], records[4]])]
+        let topics = [SummaryTopic(name: "Удержание", records: [records[0], records[1], records[4]]),
+                      SummaryTopic(name: "Домен", records: [records[5], records[6]])]
         let document = StructuredSummary.assemble(records, topics: topics, opening: "Вступление.", material: material)
         XCTAssertTrue(document.contains("## По темам"))
         XCTAssertTrue(document.contains("### Удержание"))
@@ -640,6 +643,24 @@ final class StructuredSummaryTopicTests: XCTestCase {
         XCTAssertEqual(order.count, 4)
         XCTAssertEqual(order, order.sorted(), "итоги впереди подробностей")
     }
+    /// Two subjects or none. Once the decisions moved into their own list the topics carry the
+    /// state of things only, and on a real 45-minute call that left one surviving topic of five
+    /// beside a flat list of eight statements — a heading claiming a structure the document has
+    /// not got.
+    func testOneSurvivingTopicIsNotASection() {
+        let records = [
+            record(.fact, "Удержание держится на тридцати процентах", "u1"),
+            record(.fact, "Второй порог никто не трогал с весны", "u2"),
+            record(.fact, "Запас на диске дошёл до шестисот мегабайт", "u3"),
+        ]
+        let one = [SummaryTopic(name: "Удержание", records: [records[0], records[1]]),
+                   SummaryTopic(name: "Диск", records: [records[2]])]
+        let document = StructuredSummary.assemble(records, topics: one, opening: "Вступление.", material: material)
+        XCTAssertFalse(document.contains("## По темам"), document)
+        XCTAssertTrue(document.contains("## Состояние и цифры"), document)
+        for text in records.map(\.text) { XCTAssertTrue(document.contains(text), text) }
+    }
+
     /// A topic the model named "Разное" is the bin it put what it could not classify into — nine
     /// statements of twenty-one on a real call — so its contents go under the flat heading, and
     /// the real topics stay. Two statements can come from one turn, and keying this on the cited
@@ -649,8 +670,11 @@ final class StructuredSummaryTopicTests: XCTestCase {
             record(.fact, "Удержание держится на тридцати процентах", "u1"),
             record(.fact, "Заказов на средний тир за месяц не было", "u1"),
             record(.fact, "Запас на диске дошёл до шестисот мегабайт", "u2"),
+            record(.fact, "Домен продлён до следующего марта", "u3"),
+            record(.fact, "Тариф хостинга не менялся год", "u4"),
         ]
         let topics = [SummaryTopic(name: "Удержание", records: [records[0], records[1]]),
+                      SummaryTopic(name: "Домен", records: [records[3], records[4]]),
                       SummaryTopic(name: "Разное", records: [records[2]])]
         XCTAssertEqual(StructuredSummary.fewestTopicRecords, 2, "одно предложение под заголовком — это набивка")
         let document = StructuredSummary.assemble(records, topics: topics, opening: "Вступление.", material: material)
