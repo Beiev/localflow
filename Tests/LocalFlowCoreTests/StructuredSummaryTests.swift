@@ -629,6 +629,28 @@ final class StructuredSummaryTopicTests: XCTestCase {
         XCTAssertEqual(order.count, 4)
         XCTAssertEqual(order, order.sorted(), "итоги впереди подробностей")
     }
+    /// A topic the model named "Разное" is the bin it put what it could not classify into — nine
+    /// statements of twenty-one on a real call — so its contents go under the flat heading, and
+    /// the real topics stay. Two statements can come from one turn, and keying this on the cited
+    /// identifier dropped the second of them from the document entirely.
+    func testTheBinTheModelCallsRazhnoeIsNotRenderedAsATopic() {
+        let records = [
+            record(.fact, "Удержание держится на тридцати процентах", "u1"),
+            record(.fact, "Заказов на средний тир за месяц не было", "u1"),
+            record(.fact, "Запас на диске дошёл до шестисот мегабайт", "u2"),
+        ]
+        let topics = [SummaryTopic(name: "Удержание", records: [records[0], records[1]]),
+                      SummaryTopic(name: "Разное", records: [records[2]])]
+        let document = StructuredSummary.assemble(records, topics: topics, opening: "Вступление.", material: material)
+        XCTAssertTrue(document.contains("### Удержание"))
+        XCTAssertFalse(document.contains("### Разное"), "корзина не тема")
+        XCTAssertTrue(document.contains("## Состояние и цифры"), document)
+        XCTAssertTrue(document.contains("Запас на диске"), document)
+        for text in records.map(\.text) {
+            XCTAssertTrue(document.contains(text), "утверждение не должно пропасть: \(text)")
+        }
+    }
+
     /// One topic is the whole conversation, and a heading saying so adds nothing, so the document
     /// stays as it was. The same path covers a naming call that produced nothing usable.
     func testASingleTopicKeepsTheFlatDocument() async throws {

@@ -997,14 +997,17 @@ public enum StructuredSummary {
         // for. A topic the model named "Разное" is not a subject, it is the bin it put everything
         // it could not classify into, and on a real call that bin held nine statements of
         // twenty-one; its contents go under the flat heading, where leftovers belong.
-        var grouped: Set<String> = []
+        // Matched by value rather than by the turn it cites: two different statements can come
+        // from one turn, and keying this on the identifier dropped the second of them from the
+        // document entirely.
+        var grouped: [SummaryRecord] = []
         if !topics.isEmpty {
             var written: [String] = []
             for topic in topics where !binNames.contains(topic.name.lowercased()) {
                 let body = passage(topic, material: material)
                 guard !body.isEmpty else { continue }
                 written += ["### " + topic.name, body]
-                for record in topic.records where record.kind == .fact { grouped.formUnion(record.evidence) }
+                grouped += topic.records.filter { $0.kind == .fact }
             }
             // The heading only goes in if something goes under it; an empty section is the kind
             // of padding the flat document was criticised for.
@@ -1014,7 +1017,7 @@ public enum StructuredSummary {
         // within each group the order of the conversation is kept. The first version compared only
         // "one has figures and the other does not", which is not a strict weak ordering: Swift's
         // sort is free to scramble such a comparator, and it did — facts came out shuffled.
-        let facts = records.filter { $0.kind == .fact && grouped.isDisjoint(with: $0.evidence) }
+        let facts = records.filter { $0.kind == .fact && !grouped.contains($0) }
             .map { (hasFigures: TextSafety.numberTokens($0.text).isEmpty ? 1 : 0,
                     at: material.earliestSecond(of: $0.evidence), record: $0) }
             .sorted { ($0.hasFigures, $0.at) < ($1.hasFigures, $1.at) }
