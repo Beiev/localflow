@@ -95,6 +95,14 @@ public struct SummaryMaterial: Sendable {
     }
 
     /// Where every identifier the model may cite sits on the clock — turns and screen moments.
+    /// Every figure anybody actually said, including the ones on screen. A record carrying a
+    /// figure that is not in here did not get it from this conversation.
+    var spoken: Set<String> {
+        var found = Set(TextSafety.numberTokens(turns.map(\.text).joined(separator: " ")))
+        found.formUnion(TextSafety.numberTokens(screen.map(\.text).joined(separator: " ")))
+        return found
+    }
+
     var clock: [String: Double] {
         var index = Dictionary(uniqueKeysWithValues: turns.map { ($0.id, $0.seconds) })
         for (position, moment) in screen.enumerated() {
@@ -172,7 +180,7 @@ public enum StructuredSummary {
             proposals.append(reply)
             records += quota(parse(reply, window: window, material: material))
         }
-        let filed = capped(stillOpen(foldTasksIntoDecisions(deduplicate(records, material: material)), material: material),
+        let filed = capped(stillOpen(foldedDuplicatePlans(deduplicate(records, material: material)), material: material),
                            material: material)
         guard !filed.isEmpty else {
             return EditResult(text: "", guarded: true, proposals: proposals, issues: [.empty])
@@ -285,8 +293,16 @@ public enum StructuredSummary {
 
     // MARK: - Stage two: validation and filing, in code
 
+    /// Without the speaker labels, whose digits are a name rather than a figure: a task handed to
+    /// "Участник 2" is a task with a poor owner, not a statement that invents the number two.
+    static func labelless(_ text: String) -> String {
+        text.replacingOccurrences(of: SummaryQuality.genericOwner, with: " ",
+                                  options: [.regularExpression, .caseInsensitive])
+    }
+
     static func parse(_ reply: String, window: Range<Int>, material: SummaryMaterial) -> [SummaryRecord] {
         let allowed = citable(window, in: material)
+        let said = material.spoken
         var records: [SummaryRecord] = []
         for line in reply.components(separatedBy: .newlines) {
             // A model that has seen one Markdown table in its life writes `| ФАКТ | … | u1 |`,
@@ -323,6 +339,21 @@ public enum StructuredSummary {
             if spoken == .question, SummaryQuality.tokens(text).count < fewestQuestionWords { continue }
             if spoken == .decision || spoken == .task, !evidence.contains(where: { $0.hasPrefix("u") }) { continue }
             let written = Self.written(text)
+            // Every figure in a statement has to be one somebody said. The extraction stage is
+            // shown the turns and asked to report them, so a figure in neither the conversation nor
+            // what was on screen was produced rather than read.
+            //
+            // With one way out, because a recogniser does not always write figures as digits: when
+            // the turns a statement cites contain a number word and no digit at all, a figure in
+            // the statement is that word written down — "тридцать процентов" becomes "30 %", and
+            // refusing it would throw away something true. A turn that already writes its figures
+            // as digits had nothing to render, so a figure it does not contain is refused.
+            if !TextSafety.numberTokens(labelless(written)).allSatisfy({ said.contains($0) }) {
+                let cited = evidence.compactMap { id in material.turns.first { $0.id == id }?.text }
+                    .joined(separator: " ")
+                guard cited.range(of: TextSafety.spokenFigure, options: .regularExpression) != nil,
+                      TextSafety.numberTokens(cited).isEmpty else { continue }
+            }
             records.append(SummaryRecord(kind: spoken, text: written,
                                          owner: accepted(owner, in: material)
                                              ?? (spoken == .task ? spokenOwner(for: written, evidence: evidence, in: material) : nil),
@@ -484,10 +515,11 @@ public enum StructuredSummary {
         var trimming = true
         while trimming {
             trimming = false
-            for filler in leadingFillers {
-                // The word, then whatever separates it from the rest: a space or a comma.
+            for (filler, onSpace) in leadingFillers.map({ ($0, true) }) + pausedFillers.map({ ($0, false) }) {
+                // The word, then whatever separates it from the rest: a comma always, a space only
+                // for the words that cannot mean anything else at the head of a sentence.
                 let lowered = value.lowercased()
-                guard lowered.hasPrefix(filler + " ") || lowered.hasPrefix(filler + ",") else { continue }
+                guard lowered.hasPrefix(filler + ",") || (onSpace && lowered.hasPrefix(filler + " ")) else { continue }
                 let rest = String(value.dropFirst(filler.count))
                     .trimmingCharacters(in: CharacterSet(charactersIn: " ,—-"))
                 // Never strip the line down to nothing: a short line is mostly filler by accident.
@@ -497,9 +529,12 @@ public enum StructuredSummary {
                 break
             }
         }
+        // Between two commas and nowhere else. The second form used to be a comma on the right
+        // alone, which cut a real word out of "проекты такого типа, чтобы выбрать"; and replacing
+        // the pair with a single comma left "Это, по сути, проблема" reading "Это, проблема".
         for filler in parentheticalFillers {
-            value = value.replacingOccurrences(of: ", \(filler),", with: ",")
-            value = value.replacingOccurrences(of: " \(filler), ", with: " ")
+            value = value.replacingOccurrences(of: ", \(filler), ", with: " ")
+            value = value.replacingOccurrences(of: ", \(filler),", with: " ")
         }
         value = value.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
@@ -507,8 +542,12 @@ public enum StructuredSummary {
         return first.uppercased() + value.dropFirst()
     }
     /// Words that open a spoken sentence and say nothing in a written one.
-    static let leadingFillers = ["ну", "вот", "так вот", "типа", "как бы", "в общем", "короче",
-                                 "то есть", "по сути", "слушай", "смотри", "значит", "и вот", "а вот"]
+    static let leadingFillers = ["ну", "вот", "так вот", "то есть", "и вот", "а вот"]
+    /// The same, but taken out only when a comma follows them. Each of these also has an ordinary
+    /// meaning, and stripping it on a space alone turned "В общем бюджете проекта" into "Бюджете
+    /// проекта" and the instruction "Смотри логи сервера" into "Логи сервера".
+    static let pausedFillers = ["типа", "как бы", "в общем", "короче", "по сути",
+                                "слушай", "смотри", "значит"]
     /// The same words in the middle, where they sit between commas and can be lifted out whole.
     static let parentheticalFillers = ["по сути", "типа", "как бы", "в общем", "короче", "скажем так"]
 
@@ -555,8 +594,15 @@ public enum StructuredSummary {
         guard let value = due?.trimmingCharacters(in: .whitespaces), value.count > 1, value != "-",
               value.rangeOfCharacter(from: .letters) != nil || value.rangeOfCharacter(from: .decimalDigits) != nil
         else { return nil }
-        return String(value.prefix(60))
+        guard value.count > longestDue else { return value }
+        // Cut at a word, and say that it was cut: a cell reading "…согласует да" looks like a
+        // recognition error rather than a sentence somebody shortened.
+        let cut = String(value.prefix(longestDue))
+        let head = cut[cut.startIndex..<(cut.lastIndex(of: " ") ?? cut.endIndex)]
+        return head.trimmingCharacters(in: CharacterSet(charactersIn: " ,;:-—")) + "…"
     }
+    /// Long enough for a date said out loud, short enough for a table cell.
+    public static let longestDue = 60
     /// `u12` for a turn and `s3` for a screen moment. The first version matched only turns, so a
     /// record citing what was on screen was thrown away as having cited nothing.
     static func identifiers(in field: String) -> [String] {
@@ -633,17 +679,34 @@ public enum StructuredSummary {
     /// The same point as both a decision and a task is one point. The old document listed the
     /// decision and then repeated it in the task list, and in the open questions after that. The
     /// decision wins unless the task carries an owner or a deadline the decision does not.
-    static func foldTasksIntoDecisions(_ records: [SummaryRecord]) -> [SummaryRecord] {
+    static func foldedDuplicatePlans(_ records: [SummaryRecord]) -> [SummaryRecord] {
         let decisions = records.filter { $0.kind == .decision }.map { Signature($0) }
-        guard !decisions.isEmpty else { return records }
+        // The other direction. An owner is attached during extraction, from whoever said "я
+        // перегоню метаданные", so a first-person plan arrives with a name on it and is no longer
+        // the weaker copy: it is the task table that says who and by when, and the decision
+        // repeating it in a topic passage is the line a reader reads twice.
+        let planned = records.filter { $0.kind == .task && ($0.owner != nil || $0.due != nil) }
+            .map { record -> Signature in
+                var signature = Signature(record)
+                signature.kind = .decision
+                return signature
+            }
+        guard !decisions.isEmpty || !planned.isEmpty else { return records }
         return records.filter { record in
-            guard record.kind == .task, record.owner == nil, record.due == nil else { return true }
             var signature = Signature(record)
             guard signature.tokens.count >= 3 else { return true }
-            // Compared as a decision would be, so the same figures and the same polarity are
-            // still required: a task to undo a decision is not that decision.
-            signature.kind = .decision
-            return !decisions.contains { $0.sameAs(signature) }
+            switch record.kind {
+            case .task:
+                guard record.owner == nil, record.due == nil else { return true }
+                // Compared as a decision would be, so the same figures and the same polarity are
+                // still required: a task to undo a decision is not that decision.
+                signature.kind = .decision
+                return !decisions.contains { $0.sameAs(signature) }
+            case .decision:
+                return !planned.contains { $0.sameAs(signature) }
+            case .fact, .question:
+                return true
+            }
         }
     }
     /// A question somebody answered is not an open question. The section was listing everything
@@ -805,17 +868,42 @@ public enum StructuredSummary {
                 terminator = String(last)
                 text.removeLast()
             }
-            while let last = text.last, last == "." || last == "," || last == ";" || last == " " { text.removeLast() }
+            // Everything a spoken fragment trails, except the dot of an abbreviation: stripping
+            // that one turned "Работы стоят 20 тыс." into "Работы стоят 20 тыс [12:20]."
+            while let last = text.last, last == "," || last == ";" || last == " "
+                    || (last == "." && !endsInAbbreviation(text)) {
+                text.removeLast()
+            }
             let stamp = material.timestamp(for: record.evidence).map { " " + $0 } ?? ""
-            return text + stamp + terminator
+            // What was settled is set in bold, so a reader scanning the page for the outcome of a
+            // topic finds it without reading the whole passage.
+            let body = record.kind == .decision ? "**" + text + "**" : text
+            return body + stamp + terminator
         }
-        func earlier(_ a: SummaryRecord, _ b: SummaryRecord) -> Bool {
-            material.earliestSecond(of: a.evidence) < material.earliestSecond(of: b.evidence)
+        func inOrder(_ kind: SummaryRecord.Kind) -> [String] {
+            topic.records.filter { $0.kind == kind }
+                .sorted { material.earliestSecond(of: $0.evidence) < material.earliestSecond(of: $1.evidence) }
+                .map(sentence)
         }
-        let decisions = topic.records.filter { $0.kind == .decision }.sorted(by: earlier)
-        let facts = topic.records.filter { $0.kind == .fact }.sorted(by: earlier)
-        return (decisions + facts).map(sentence).joined(separator: " ")
+        // What was settled leads, and the state of things follows — but as two paragraphs, each
+        // in the order of the conversation. In one paragraph the clock jumped backwards at the
+        // seam, a decision at [15:00] standing above the measurement at [12:20] that led to it,
+        // and the whole passage read as though the notes had been shuffled.
+        return [inOrder(.decision), inOrder(.fact)]
+            .filter { !$0.isEmpty }
+            .map { $0.joined(separator: " ") }
+            .joined(separator: "\n\n")
     }
+    /// Whether the text ends on a shortened word rather than on a full stop.
+    static func endsInAbbreviation(_ text: String) -> Bool {
+        guard text.hasSuffix(".") else { return false }
+        let word = text.dropLast().split { !$0.isLetter && $0 != "." }.last.map(String.init) ?? ""
+        return abbreviations.contains(word.lowercased())
+    }
+    /// The shortenings a conversation about money, volume and time actually uses.
+    static let abbreviations: Set<String> = ["тыс", "млн", "млрд", "руб", "коп", "долл", "евро",
+                                             "шт", "ед", "др", "пр", "т.д", "т.п", "т.е", "т.ч",
+                                             "мин", "сек", "ч", "г", "гг", "кв", "проц", "см", "мм", "км", "кг", "мл"]
 
     // MARK: - Stage three: the document, assembled in code
 
@@ -834,16 +922,6 @@ public enum StructuredSummary {
         if topics.isEmpty {
             let decisions = bullets(.decision)
             if !decisions.isEmpty { parts += ["## Решения", decisions.joined(separator: "\n")] }
-        } else {
-            var written: [String] = []
-            for topic in topics {
-                let body = passage(topic, material: material)
-                guard !body.isEmpty else { continue }
-                written += ["### " + topic.name, body]
-            }
-            // The heading only goes in if something goes under it; an empty section is the kind
-            // of padding the flat document was criticised for.
-            if !written.isEmpty { parts += ["## По темам"] + written }
         }
         let tasks = records.filter { $0.kind == .task }
         if !tasks.isEmpty {
@@ -857,6 +935,22 @@ public enum StructuredSummary {
                 rows.append(dated ? head + " \(task.due ?? "—") |" : head)
             }
             parts += ["## Задачи", rows.joined(separator: "\n")]
+        }
+        // Who owes what and what nobody answered are the two things a reader looks for, so they
+        // come before the detail. They used to sit under six topic passages, where a deadline and
+        // an unanswered question were the last thing on the page.
+        let questions = bullets(.question)
+        if !questions.isEmpty { parts += ["## Открытые вопросы", questions.joined(separator: "\n")] }
+        if !topics.isEmpty {
+            var written: [String] = []
+            for topic in topics {
+                let body = passage(topic, material: material)
+                guard !body.isEmpty else { continue }
+                written += ["### " + topic.name, body]
+            }
+            // The heading only goes in if something goes under it; an empty section is the kind
+            // of padding the flat document was criticised for.
+            if !written.isEmpty { parts += ["## По темам"] + written }
         }
         // A measurement with a figure in it is what the section is for; the rest follows it, and
         // within each group the order of the conversation is kept. The first version compared only
@@ -873,8 +967,6 @@ public enum StructuredSummary {
                 return "- " + record.text + stamp
             }.joined(separator: "\n")]
         }
-        let questions = bullets(.question)
-        if !questions.isEmpty { parts += ["## Открытые вопросы", questions.joined(separator: "\n")] }
         // What was on the shared screen, as a list of moments rather than their text: the text
         // itself is in the recording's own screen tab, and repeating it here would bury the notes.
         if !material.screen.isEmpty {
@@ -999,8 +1091,12 @@ public enum StructuredSummary {
         else { return "" }
         // Every figure in it has to have been said. This is the one guard that cannot be relaxed:
         // a readable paragraph with a wrong number is worse than no paragraph.
+        // Minus the speaker labels, because a paragraph that calls somebody "Участник 2" when no
+        // name was ever said is poorly attributed, not untrue, and throwing the whole paragraph
+        // away over the digit in a label is how a document loses the one part of it that reads
+        // like prose.
         let said = Set(TextSafety.numberTokens(spoken))
-        guard TextSafety.numberTokens(value).allSatisfy({ said.contains($0) }) else { return "" }
+        guard TextSafety.numberTokens(labelless(value)).allSatisfy({ said.contains($0) }) else { return "" }
         return value
     }
 
@@ -1016,12 +1112,13 @@ public enum StructuredSummary {
                         material: SummaryMaterial) -> String {
         let assembled = deterministicOpening(records, topics: topics, people: material.named, material: material)
         guard !told.isEmpty else { return assembled }
-        // The paragraph says what it was about; the line under it says how much of it there is.
-        let counts = "Решения: \(records.filter { $0.kind == .decision }.count). Задачи: \(records.filter { $0.kind == .task }.count). Открытые вопросы: \(records.filter { $0.kind == .question }.count)."
-        let people = material.named.isEmpty ? "" : "Участники: " + material.named.joined(separator: ", ") + ". "
+        // Who was in it, and nothing else. The line used to carry "Решения: 5. Задачи: 7. Открытые
+        // вопросы: 3." as well — a count of sections that now stand directly under the paragraph,
+        // where the reader can see how many there are by looking at them.
+        guard !material.named.isEmpty else { return told }
         // As a quote, because it is what the document says about itself, not what the conversation
         // said. The renderer draws it apart from the paragraph above it.
-        return told + "\n\n> " + people + counts
+        return told + "\n\n> Участники: " + material.named.joined(separator: ", ") + "."
     }
 
     /// Written in labels and numbers rather than sentences, because a sentence assembled in code

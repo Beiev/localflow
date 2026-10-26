@@ -59,6 +59,28 @@ public enum TextSafety {
     private static let numberPattern = #"[+−-]?\d+(?:[.,]\d+|[ \u00a0\u202f]\d{3}(?!\d))*"#
     /// The numeric tokens a text carries, normalized. Exposed so a summary can be checked for
     /// numbers it invented: a figure that is not in the transcript was not said.
+    /// The number words a conversation actually says, in the cases it says them in.
+    ///
+    /// This is not a numeral reader and does not try to be one: it answers one question — did
+    /// anybody in these turns say a figure out loud rather than write it. A speech recogniser
+    /// renders most figures as digits, but not all of them, and a summary that writes "30 %" over
+    /// a turn saying "тридцать процентов" is right, not invented.
+    public static let spokenFigure: String = {
+        let forms = [
+            "ноль", "один", "одна", "одно", "одного", "одну", "одним", "одной",
+            "два", "две", "двух", "двумя", "три", "трёх", "трех", "тремя",
+            "четыре", "четырёх", "четырех", "пять", "пяти", "шесть", "шести",
+            "семь", "семи", "восемь", "восьми", "девять", "девяти", "десять", "десяти",
+            "двадцать", "двадцати", "тридцать", "тридцати", "сорок", "сорока",
+            "пятьдесят", "пятидесяти", "шестьдесят", "шестидесяти",
+            "семьдесят", "семидесяти", "восемьдесят", "восьмидесяти", "девяносто", "девяноста",
+            "сто", "ста", "двести", "двухсот", "триста", "трёхсот", "трехсот",
+            "четыреста", "пятьсот", "полтора", "полторы", "половина", "половины",
+            #"\p{L}*надцат\p{L}*"#, #"тысяч\p{L}*"#, #"миллион\p{L}*"#, #"миллиард\p{L}*"#,
+        ]
+        return #"(?i)(?<!\p{L})(?:"# + forms.joined(separator: "|") + #")(?!\p{L})"#
+    }()
+
     public static func numberTokens(_ text: String) -> [String] { numbers(text) }
     private static func numbers(_ text: String) -> [String] {
         matches(numberPattern, text).map { value in

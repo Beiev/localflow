@@ -1,6 +1,32 @@
 import XCTest
 @testable import LocalFlowCore
 
+final class RussianCountTests: XCTestCase {
+    private func records(_ n: Int) -> String { RussianDates.counted(n, "запись", "записи", "записей") }
+    func testTheThreeFormsOfACountedNoun() {
+        XCTAssertEqual(records(1), "1 запись")
+        XCTAssertEqual(records(2), "2 записи")
+        XCTAssertEqual(records(4), "4 записи")
+        XCTAssertEqual(records(5), "5 записей")
+        XCTAssertEqual(records(0), "0 записей")
+    }
+    /// Eleven to fourteen take the many-form although they end in one to four, which is the half
+    /// of the rule an interface written by hand always gets wrong.
+    func testElevenToFourteenAreNotOneToFour() {
+        XCTAssertEqual(records(11), "11 записей")
+        XCTAssertEqual(records(14), "14 записей")
+        XCTAssertEqual(records(21), "21 запись")
+        XCTAssertEqual(records(22), "22 записи")
+        XCTAssertEqual(records(111), "111 записей")
+        XCTAssertEqual(records(101), "101 запись")
+    }
+    func testTheFormsTheWindowActuallyUses() {
+        XCTAssertEqual(RussianDates.counted(5, "участник", "участника", "участников"), "5 участников")
+        XCTAssertEqual(RussianDates.counted(3, "участник", "участника", "участников"), "3 участника")
+        XCTAssertEqual(RussianDates.counted(2, "слово", "слова", "слов"), "2 слова")
+    }
+}
+
 final class RussianDatesTests: XCTestCase {
     private let october = Date(timeIntervalSince1970: 1_761_436_800)
 

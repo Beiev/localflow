@@ -126,22 +126,26 @@ final class StructuredSummaryRecordTests: XCTestCase {
         XCTAssertTrue(StructuredSummary.hasAction("Покопаться в сегменте"))
         XCTAssertFalse(StructuredSummary.hasAction("запас на диске 650 мегабайт"))
     }
-    /// The same point as a decision and again as a task is one point, and the decision wins —
-    /// unless the task carries an owner or a deadline the decision does not.
-    func testATaskRepeatingADecisionIsDroppedUnlessItAddsSomething() {
+    /// The same point as a decision and again as a task is one point. The decision wins while the
+    /// task says only what the decision already said; once the task carries an owner or a deadline
+    /// it is the more useful of the two, and the decision is the line a reader reads twice.
+    func testOneOfAPairSayingTheSameThingIsDropped() {
         let bare = [
             SummaryRecord(kind: .decision, text: "Поднять первый порог в цене до двух с половиной", evidence: ["u1"]),
             SummaryRecord(kind: .task, text: "Первый порог поднять в цене до двух с половиной", evidence: ["u2"]),
         ]
-        XCTAssertEqual(StructuredSummary.foldTasksIntoDecisions(bare).map(\.kind), [.decision])
+        XCTAssertEqual(StructuredSummary.foldedDuplicatePlans(bare).map(\.kind), [.decision])
         var owned = bare
         owned[1].owner = "Паша"
-        XCTAssertEqual(StructuredSummary.foldTasksIntoDecisions(owned).count, 2)
+        XCTAssertEqual(StructuredSummary.foldedDuplicatePlans(owned).map(\.kind), [.task])
+        var dated = bare
+        dated[1].due = "к среде"
+        XCTAssertEqual(StructuredSummary.foldedDuplicatePlans(dated).map(\.kind), [.task])
         let different = [
             SummaryRecord(kind: .decision, text: "Поднять первый порог в цене до двух с половиной", evidence: ["u1"]),
             SummaryRecord(kind: .task, text: "Найти хостинг, терпимый к содержимому примеров", evidence: ["u2"]),
         ]
-        XCTAssertEqual(StructuredSummary.foldTasksIntoDecisions(different).count, 2)
+        XCTAssertEqual(StructuredSummary.foldedDuplicatePlans(different).count, 2)
     }
     func testOnlyAKnownPersonIsAcceptedAsAnOwner() {
         XCTAssertEqual(parse("ЗАДАЧА | Паша | Собрать структуру сайта и выложить черновик | - | u1").first?.owner, "Паша")
@@ -361,7 +365,7 @@ final class StructuredSummaryQuotaTests: XCTestCase {
     }
     /// The exact line from a real call that came back labelled as a task and is a measurement.
     func testTheRealMislabelledMeasurementFromTheCallIsRoutedToFacts() {
-        let material = SummaryMaterial.parse("[36:11] Макс: про цены")
+        let material = SummaryMaterial.parse("[36:11] Макс: первый вариант 20 единиц, второй 3 единицы 4 ед")
         let records = StructuredSummary.parse(
             "ЗАДАЧА |  | Если первый вариант стоит 20 единиц, то второй стоит 3 единицы 4 ед |  | u1",
             window: 0..<1, material: material)
@@ -541,15 +545,39 @@ final class StructuredSummaryTopicTests: XCTestCase {
         XCTAssertEqual(StructuredSummary.accepted(name: "  «Хостинг и домен».  "), "Хостинг и домен")
     }
 
-    func testAPassagePutsWhatWasSettledFirstAndCitesEveryStatement() {
+    /// What was settled leads the passage and is set in bold, so a reader scanning for the outcome
+    /// of a topic finds it without reading the paragraph. The state of things follows as its own
+    /// paragraph, because in one paragraph the clock jumped backwards at the seam.
+    func testAPassageLeadsWithWhatWasSettledAndKeepsEachParagraphInOrder() {
         let topic = SummaryTopic(name: "Удержание", records: [
             record(.fact, "Удержание держится на тридцати процентах", "u1"),
             record(.decision, "Поднимаем первый порог до двух тысяч", "u3"),
         ])
         let passage = StructuredSummary.passage(topic, material: material)
-        XCTAssertTrue(passage.hasPrefix("Поднимаем первый порог до двух тысяч [01:10]."), passage)
-        XCTAssertTrue(passage.contains("Удержание держится на тридцати процентах [00:10]."), passage)
+        XCTAssertTrue(passage.hasPrefix("**Поднимаем первый порог до двух тысяч** [01:10]."), passage)
+        XCTAssertTrue(passage.contains("\n\nУдержание держится на тридцати процентах [00:10]."), passage)
         XCTAssertFalse(passage.contains(".."), "точка исходной записи не удваивается")
+    }
+    /// Two decisions and two measurements: each paragraph reads forward on its own.
+    func testEachParagraphOfAPassageReadsForward() {
+        let longer = SummaryMaterial.parse("[00:10] Паша: первое\n[01:10] Лена: второе\n[02:10] Паша: третье\n[03:10] Лена: четвёртое")
+        let topic = SummaryTopic(name: "Порог", records: [
+            record(.decision, "Поднимаем первый порог до двух тысяч", "u3"),
+            record(.fact, "Удержание держится на тридцати процентах", "u4"),
+            record(.decision, "Переносим запуск на следующую неделю", "u1"),
+            record(.fact, "Готовность работ около половины", "u2"),
+        ])
+        let passage = StructuredSummary.passage(topic, material: longer)
+        let stamps = RichText.timeReferences(in: passage).map(\.label)
+        XCTAssertEqual(stamps, ["[00:10]", "[02:10]", "[01:10]", "[03:10]"], "каждый абзац идёт вперёд")
+    }
+    /// The dot of a shortened word is not the end of a sentence: stripping it turned "Работы
+    /// стоят 20 тыс." into "Работы стоят 20 тыс [12:20]."
+    func testAnAbbreviationKeepsItsDot() {
+        let topic = SummaryTopic(name: "Деньги", records: [record(.fact, "Работы стоят 20 тыс.", "u1")])
+        XCTAssertEqual(StructuredSummary.passage(topic, material: material), "Работы стоят 20 тыс. [00:10].")
+        XCTAssertTrue(StructuredSummary.endsInAbbreviation("Выручка 3 млн."))
+        XCTAssertFalse(StructuredSummary.endsInAbbreviation("Это конец предложения."))
     }
 
     func testTheDocumentWithTopicsDropsTheSectionsTheTopicsReplaced() {
@@ -618,7 +646,7 @@ final class StructuredSummaryGuardTests: XCTestCase {
             record(.decision, "Решили не запускать перенос в понедельник утром", "u4"),
         ]
         XCTAssertEqual(StructuredSummary.deduplicate(records, material: material).count, 2)
-        XCTAssertEqual(StructuredSummary.foldTasksIntoDecisions([
+        XCTAssertEqual(StructuredSummary.foldedDuplicatePlans([
             records[0], record(.task, "Не запускать перенос в понедельник утром", "u4"),
         ]).count, 2, "задача отменить решение — не повтор этого решения")
     }
@@ -665,7 +693,7 @@ final class StructuredSummaryGuardTests: XCTestCase {
         XCTAssertEqual(StructuredSummary.route(.fact, text: "Стоит перенести запуск на следующую неделю"), .task)
     }
     func testALineWrappedInPipesIsStillRead() {
-        let records = StructuredSummary.parse("| ФАКТ | Лимит поставили на 20 тысяч в месяц | u2 |",
+        let records = StructuredSummary.parse("| ФАКТ | Первый порог решили поднимать вместе | u2 |",
                                               window: 0..<5, material: material)
         XCTAssertEqual(records.count, 1)
         XCTAssertEqual(records[0].evidence, ["u2"])
@@ -719,7 +747,36 @@ final class StructuredSummaryReadabilityTests: XCTestCase {
     }
     func testAFillerBetweenCommasIsLiftedOut() {
         XCTAssertEqual(StructuredSummary.written("У нас было, по сути, четыре клиента"),
-                       "У нас было, четыре клиента")
+                       "У нас было четыре клиента")
+    }
+    /// Each of these words also means something, and a rule that took it out on a space alone
+    /// turned a real sentence into a fragment.
+    func testAWordThatOnlyLooksLikeAFillerIsLeftAlone() {
+        XCTAssertEqual(StructuredSummary.written("В общем бюджете проекта заложено больше"),
+                       "В общем бюджете проекта заложено больше")
+        XCTAssertEqual(StructuredSummary.written("Смотри логи сервера за вчерашний день"),
+                       "Смотри логи сервера за вчерашний день")
+        XCTAssertEqual(StructuredSummary.written("Проекты такого типа, чтобы выбрать подходящий"),
+                       "Проекты такого типа, чтобы выбрать подходящий")
+        XCTAssertEqual(StructuredSummary.written("По сути вопроса они так и не ответили"),
+                       "По сути вопроса они так и не ответили")
+    }
+    /// With the comma it is a filler again, and that is the form it is taken out in.
+    func testTheSameWordWithAPauseAfterItIsStillTakenOut() {
+        XCTAssertEqual(StructuredSummary.written("В общем, бюджет мы согласовали с подрядчиком"),
+                       "Бюджет мы согласовали с подрядчиком")
+        XCTAssertEqual(StructuredSummary.written("Короче, переносим запуск на следующую неделю"),
+                       "Переносим запуск на следующую неделю")
+    }
+    /// A deadline cut at sixty characters was cut mid-word: a cell reading "…согласует да" looks
+    /// like a recognition error rather than a sentence somebody shortened.
+    func testALongDeadlineIsCutAtAWord() {
+        let said = "После того как заказчик подтвердит требования и согласует дату запуска"
+        let cut = StructuredSummary.accepted(due: said) ?? ""
+        XCTAssertTrue(cut.hasSuffix("…"), cut)
+        XCTAssertFalse(cut.contains("согласует да"), cut)
+        XCTAssertTrue(said.hasPrefix(String(cut.dropLast())), cut)
+        XCTAssertEqual(StructuredSummary.accepted(due: "к среде"), "к среде")
     }
     /// Eight of nine tasks on a real call came out with no owner, because the model is asked for
     /// one and rarely supplies it — while the recording knows who was speaking.
@@ -741,7 +798,7 @@ final class StructuredSummaryReadabilityTests: XCTestCase {
         let topic = SummaryTopic(name: "Сайт", records: [
             SummaryRecord(kind: .decision, text: "Нужно накидать структуру сайта", evidence: ["u1"]),
         ])
-        XCTAssertTrue(StructuredSummary.passage(topic, material: material).hasPrefix("Нужно накидать"))
+        XCTAssertTrue(StructuredSummary.passage(topic, material: material).hasPrefix("**Нужно накидать"))
     }
 }
 
@@ -779,15 +836,15 @@ final class StructuredSummaryNarrativeTests: XCTestCase {
         XCTAssertTrue(StructuredSummary.accepted(narrative: "Поговорили.", spoken: spoken).isEmpty)
         XCTAssertTrue(StructuredSummary.accepted(narrative: String(repeating: "слово ", count: 400), spoken: spoken).isEmpty)
     }
-    /// When the paragraph survives it opens the document and the counts follow it; when it does
-    /// not, the document opens with what the code assembled, exactly as before.
+    /// When the paragraph survives it opens the document and only the participants follow it; when
+    /// it does not, the document opens with what the code assembled, exactly as before.
     func testTheOpeningUsesTheParagraphWhenThereIsOne() {
         let material = SummaryMaterial.parse("[00:10] Макс: слово\n[00:20] Пётр: слово")
         let records = [SummaryRecord(kind: .decision, text: "Поднимаем первый порог", evidence: ["u1"])]
         let withTold = StructuredSummary.opening(for: records, told: "Разговор о порогах и удержании.", material: material)
         XCTAssertTrue(withTold.hasPrefix("Разговор о порогах"))
-        XCTAssertTrue(withTold.contains("Решения: 1"))
         XCTAssertTrue(withTold.contains("Участники: Макс, Пётр"))
+        XCTAssertFalse(withTold.contains("Решения: 1"), "счёт разделов, которые стоят ниже, — шум")
         let without = StructuredSummary.opening(for: records, material: material)
         XCTAssertTrue(without.hasPrefix("Участники: Макс, Пётр"))
     }
@@ -949,5 +1006,33 @@ final class StructuredSummaryTaskTableTests: XCTestCase {
         XCTAssertTrue(withDates.contains("| Кто | Что | Срок |"))
         XCTAssertTrue(withDates.contains("| пятница |"))
         XCTAssertTrue(withDates.contains("| — |"), "у задачи без срока прочерк на месте")
+    }
+}
+
+final class StructuredSummaryFigureTests: XCTestCase {
+    private let material = SummaryMaterial.parse("""
+    [00:10] Макс: Из четырёх заявок закрыли 3, осталась одна.
+    [00:40] Пётр: Лимит поставили на 20 тысяч в месяц.
+    """)
+
+    /// A sweep of the whole archive found a meeting whose summary carried four invented figures
+    /// out of eight. The extraction stage is shown the turns and asked to report them.
+    func testAFigureNobodySaidIsNotAStatement() {
+        XCTAssertTrue(StructuredSummary.parse("ФАКТ | Лимит поставили на 50 тысяч в месяц | u2",
+                                              window: 0..<2, material: material).isEmpty)
+    }
+    func testAFigureSomebodySaidIsKept() {
+        XCTAssertEqual(StructuredSummary.parse("ФАКТ | Лимит поставили на 20 тысяч в месяц | u2",
+                                               window: 0..<2, material: material).count, 1)
+    }
+    /// A figure said anywhere in the conversation counts: the extraction window is not the only
+    /// place a speaker may have said it.
+    func testAFigureFromAnotherPartOfTheConversationCounts() {
+        XCTAssertEqual(StructuredSummary.parse("ФАКТ | Из четырёх заявок закрыли 3 за месяц | u2",
+                                               window: 0..<2, material: material).count, 1)
+    }
+    func testAStatementWithNoFiguresIsUnaffected() {
+        XCTAssertEqual(StructuredSummary.parse("ФАКТ | Заявки закрывает команда продаж | u1",
+                                               window: 0..<2, material: material).count, 1)
     }
 }

@@ -147,7 +147,7 @@ struct MainView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     SectionHeader(title: "Архив", subtitle: search.isEmpty
-                        ? (model.sessions.isEmpty ? nil : "\(model.sessions.count) записей")
+                        ? (model.sessions.isEmpty ? nil : RussianDates.counted(model.sessions.count, "запись", "записи", "записей"))
                         : "\(results.count) найдено")
                     Spacer()
                 }.padding(.horizontal, 16).padding(.top, 20)
@@ -301,6 +301,7 @@ struct SessionView: View {
     @State private var heard = ""
     @State private var preferred = ""
     @State private var copiedLabel: String?
+    @FocusState private var renaming: Bool
 
     var current: RecordingSession { model.sessions.first { $0.id == session.id } ?? session }
     private var busy: Bool { model.processing || model.isRecording }
@@ -380,6 +381,9 @@ struct SessionView: View {
         }
         .frame(minWidth: 460, maxWidth: .infinity)
         .onAppear { newTitle = current.title }
+        // The name taken from the topics arrives while the window is already open, and must not
+        // overwrite what is being typed into the field at that moment.
+        .onChange(of: current.title) { _, value in if !renaming { newTitle = value } }
         .onChange(of: current.versions.count) { _, _ in if pane == nil || !panes.contains(selected) { pane = panes.first } }
         .confirmationDialog("Удалить запись, текст и аудио?", isPresented: $deletePrompt) {
             Button("Удалить запись", role: .destructive) { model.delete(current) }
@@ -409,17 +413,30 @@ struct SessionView: View {
         }
     }
 
+    /// An empty field is not a name: the record keeps the one it has.
+    private func commitTitle() {
+        let value = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, value != current.title else { newTitle = current.title; return }
+        model.rename(current, to: value)
+    }
+
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
             KindBadge(kind: current.kind, size: 36)
             VStack(alignment: .leading, spacing: 5) {
                 TextField("Название", text: $newTitle).font(.title2.bold()).textFieldStyle(.plain)
-                    .onSubmit { model.rename(current, to: newTitle) }
+                    .focused($renaming)
+                    .onSubmit { commitTitle() }
+                    // A name typed and then clicked away from used to be lost: the field only
+                    // committed on Enter, and nothing about it said so.
+                    .onChange(of: renaming) { _, active in if !active { commitTitle() } }
                 HStack(spacing: 7) {
                     Text(current.kind.title)
                     Text("·"); Text(RussianDates.dayAndTime(current.createdAt))
                     if current.duration > 0 { Text("·"); Text(RussianDates.length(current.duration)) }
-                    if isMeeting, current.participantCount > 1 { Text("·"); Text("\(current.participantCount) участника") }
+                    if isMeeting, current.participantCount > 1 {
+                        Text("·"); Text(RussianDates.counted(current.participantCount, "участник", "участника", "участников"))
+                    }
                 }.font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)

@@ -171,14 +171,21 @@ final class SummarySourceSpeechTests: XCTestCase {
         let transcript = "[04:41] Участник 1: записали 370 строк\n[07:23] Я: да"
         XCTAssertEqual(SummaryQuality.speech(of: transcript), " записали 370 строк\n да")
     }
-    func testLabelDigitsAreNotTreatedAsFiguresOfTheConversation() {
+    /// A label is a name on both sides of the comparison. Counting it on the summary's side alone
+    /// reported four invented figures out of eight on a meeting whose figures were all real.
+    func testLabelDigitsAreNotTreatedAsFiguresOnEitherSide() {
         let transcript = "[04:41] Участник 1: ничего числового тут нет"
         let score = SummaryQuality.score("## Задачи\n- Участник 1: собрать структуру сайта [04:41]",
                                          source: transcript, duration: 300)
         XCTAssertEqual(score.sourceNumbers, 0)
-        XCTAssertEqual(score.groundedNumbers, 0, "«1» из метки говорящего — не цифра разговора")
-        XCTAssertEqual(score.numbers, 1)
-        XCTAssertEqual(score.numberFidelity, 0)
+        XCTAssertEqual(score.numbers, 0, "«1» из метки говорящего — не цифра разговора")
+        XCTAssertEqual(score.numberFidelity, 1)
+    }
+    /// A poor owner is still a poor owner: the label is excused as a figure, not as an owner.
+    func testALabelIsStillCountedAsAGenericOwner() {
+        let score = SummaryQuality.score("## Задачи\n- Участник 1: собрать структуру сайта [04:41]",
+                                         source: "[04:41] Участник 1: соберу структуру", duration: 300)
+        XCTAssertEqual(score.tasksWithGenericOwner, 1)
     }
     func testAPlainTranscriptWithoutLabelsIsLeftAlone() {
         XCTAssertEqual(SummaryQuality.speech(of: "просто текст без отметок"), "просто текст без отметок")

@@ -18,7 +18,7 @@ struct DiaryView: View {
             VStack(alignment: .leading, spacing: 22) {
                 HStack {
                     Text(RussianDates.day(current.createdAt)).font(.caption).foregroundStyle(.secondary)
-                    if wordCount > 0 { Text("· \(wordCount) слов").font(.caption).foregroundStyle(.secondary) }
+                    if wordCount > 0 { Text("· " + RussianDates.counted(wordCount, "слово", "слова", "слов")).font(.caption).foregroundStyle(.secondary) }
                     Spacer()
                 }
                 TextField("Название заметки", text: Binding(get: { current.title }, set: { model.rename(current, to: $0) }))

@@ -314,6 +314,16 @@ struct Bench {
                         return nil
                     }
                     let narrative = result.text.contains("## По темам") && !topics.isEmpty
+                    // The numbers say whether a guard fired; only the document says whether it
+                    // reads. `LOCALFLOW_SWEEP_DIR` writes each one out so a whole archive can be
+                    // read in one sitting. It holds real conversations, so it is written where it
+                    // is asked for and nowhere near the repository.
+                    if let folder = ProcessInfo.processInfo.environment["LOCALFLOW_SWEEP_DIR"], !folder.isEmpty {
+                        let url = URL(fileURLWithPath: folder, isDirectory: true)
+                        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+                        try? result.text.write(to: url.appendingPathComponent("\(prepared.id.uuidString.prefix(8)).md"),
+                                               atomically: true, encoding: .utf8)
+                    }
                     print("\(prepared.id.uuidString.prefix(8)) \(String(format: "%5.1f", prepared.duration / 60))m topics=\(topics.count) guarded=\(result.guarded) calls=\(result.proposals.count) \(score.line) elapsed_s=\(String(format: "%.1f", elapsed))")
                     if !topics.isEmpty { print("    темы: " + topics.joined(separator: " · ")) }
                     rows.append(["id": String(prepared.id.uuidString.prefix(8)), "minutes": prepared.duration / 60,

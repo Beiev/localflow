@@ -1,6 +1,6 @@
 import Foundation
 
-/// Dates in the language the rest of the application speaks.
+/// Dates, and the rest of the grammar an interface in Russian needs.
 ///
 /// `Date.formatted` follows the system locale, so on an English Mac a Russian interface was
 /// labelling its records "Oct 25, 2026 at 14:37" — next to "Созвон", "Расшифровка" and
@@ -32,6 +32,23 @@ public enum RussianDates {
         if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
            calendar.isDate(date, inSameDayAs: yesterday) { return "Вчера" }
         return day(date, now: now)
+    }
+
+    /// "1 запись", "2 записи", "5 записей". Russian needs three forms of a counted noun, and an
+    /// interface written with one of them is wrong about two thirds of the time: the archive was
+    /// labelled "2 записей" and a meeting of five people "5 участника".
+    public static func counted(_ number: Int, _ one: String, _ few: String, _ many: String) -> String {
+        "\(number) " + form(number, one, few, many)
+    }
+    public static func form(_ number: Int, _ one: String, _ few: String, _ many: String) -> String {
+        // Eleven to fourteen take the many-form despite ending in one to four.
+        let hundred = abs(number) % 100
+        if (11...14).contains(hundred) { return many }
+        switch hundred % 10 {
+        case 1: return one
+        case 2, 3, 4: return few
+        default: return many
+        }
     }
 
     /// Minutes and seconds, or hours when there are any: a two-hour call read "127:14".

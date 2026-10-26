@@ -119,6 +119,11 @@ public enum SummaryQuality {
         // about the document, not about the conversation, and counting those as figures nobody
         // said made an assembled opening look like a document that invents numbers.
         claims = claims.replacingOccurrences(of: assembledCounts, with: " ", options: .regularExpression)
+        // And so is the number in a speaker's label. A task handed to "Участник 2" is a task with a
+        // poor owner — which `ownerClarity` is what measures — and counting its label as a figure
+        // nobody said reported four invented figures out of eight on a meeting that had none.
+        claims = claims.replacingOccurrences(of: genericOwner, with: " ",
+                                             options: [.regularExpression, .caseInsensitive])
         let summaryNumbers = TextSafety.numberTokens(claims)
         score.numbers = summaryNumbers.count
         score.groundedNumbers = summaryNumbers.filter { sourceNumbers.contains($0) }.count
@@ -236,6 +241,8 @@ public enum SummaryQuality {
             current.append(character)
             guard character == "." || character == "!" || character == "?" else { continue }
             let statement = current.trimmingCharacters(in: .whitespaces)
+            // "Работы стоят 20 тыс." is one statement, not a statement and then a timestamp.
+            if StructuredSummary.endsInAbbreviation(statement) { continue }
             if statement.count >= 3 {
                 found.append(statement)
                 current = ""
