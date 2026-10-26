@@ -125,6 +125,15 @@ final class StructuredSummaryRecordTests: XCTestCase {
         XCTAssertFalse(StructuredSummary.opensWithAPlan("Возможность есть, но её не проверяли"))
         XCTAssertFalse(StructuredSummary.opensWithAPlan("Стоимость работ выросла втрое"))
     }
+    /// A line with figures and nothing to do in it is a measurement, however it was labelled —
+    /// the same test the task label already got. "Цена варьируется от 3-4 до 17 долларов за
+    /// некоторые ролики" came back labelled РЕШЕНИЕ and stood among a meeting's outcomes.
+    func testAMeasurementLabelledAsADecisionBecomesAFact() {
+        XCTAssertEqual(parse("РЕШЕНИЕ | Цена варьируется от 3 до 17 долларов за ролик | u1").first?.kind, .fact)
+        XCTAssertEqual(parse("РЕШЕНИЕ | Поставить цель 20 тысяч в ноябре | u1").first?.kind, .decision)
+        XCTAssertEqual(parse("РЕШЕНИЕ | Договорились на 20 тысячах в ноябре | u1").first?.kind, .decision)
+        XCTAssertEqual(parse("РЕШЕНИЕ | Для нас выгоднее всего массовое производство | u1").first?.kind, .decision)
+    }
     /// A decision keeps the model's label even when it is spoken as an obligation. Demoting these
     /// left a 45-minute call with one decision, and the wrong one: in Russian business speech the
     /// decision of a call is routinely said as "надо переносить запуск на следующую неделю".
@@ -287,6 +296,17 @@ final class StructuredSummaryDocumentTests: XCTestCase {
         XCTAssertTrue(document.contains("| Кто | Что |"), document)
         XCTAssertTrue(document.contains("| Паша | Собрать структуру сайта"), document)
         XCTAssertTrue(document.contains("| не назван | Найти хостинг"), document)
+    }
+    /// One real call produced an "open question" of five hundred characters — a stretch of speech
+    /// the extraction stage handed back whole — and it filled the section on its own.
+    func testALongBulletIsCutLikeATableCell() {
+        let material = SummaryMaterial.parse("[00:10] Паша: первое")
+        let long = String(repeating: "слово ", count: 60).trimmingCharacters(in: .whitespaces)
+        let document = StructuredSummary.assemble([SummaryRecord(kind: .question, text: long, evidence: ["u1"])],
+                                                  opening: "Вступление.", material: material)
+        XCTAssertTrue(document.contains("…"), document)
+        XCTAssertLessThan(document.count, 250, document)
+        XCTAssertTrue(document.contains("[00:10]"), "отметка остаётся: по ней читают сказанное целиком")
     }
     /// A task cell says what to do, so the word saying that something has to be done is the
     /// column's name rather than part of the task.

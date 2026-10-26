@@ -493,13 +493,31 @@ public enum StructuredSummary {
         case .task:
             if nothingToDoHere(text) { return .fact }
             return hasAction(text) || text.range(of: firstPerson, options: .regularExpression) != nil ? .task : .fact
-        case .decision, .question: return kind
+        // The same test the task label gets: a line with figures and nothing to do in it is a
+        // measurement, however it was labelled. "Цена варьируется от 3-4 до 17 долларов за
+        // некоторые ролики" came back labelled РЕШЕНИЕ and stood among the outcomes of a meeting.
+        // A decision spoken as an obligation is untouched by this, because it has an action in it.
+        case .decision:
+            if settled || carriesAnInfinitive(text) { return .decision }
+            return TextSafety.numberTokens(text).isEmpty ? .decision : .fact
+        case .question: return kind
         }
     }
     /// Whether a line asks for something to be done. Russian infinitives end in -ть/-ться/-ти/-чь,
     /// and the extraction stage is asked for "что сделать", so a task that carries none is almost
     /// always a statement that was mislabelled. A task phrased with a finite verb — "Макс даёт
     /// апдейт в чат" — is demoted too; that is the known cost of this rule.
+    /// Something to do, narrower than `hasAction`: an infinitive only, without the present tense
+    /// it also accepts. "Цена варьируется от 3 до 17 долларов" describes rather than asks, and
+    /// "варьируется" is why a measurement labelled РЕШЕНИЕ survived among a meeting's outcomes.
+    static func carriesAnInfinitive(_ text: String) -> Bool {
+        guard let regex = try? NSRegularExpression(pattern: #"\p{L}{2,}(?:ться|ть|ти|чь)(?![\p{L}])"#,
+                                                   options: [.caseInsensitive]) else { return false }
+        return regex.matches(in: text, range: NSRange(text.startIndex..., in: text)).contains { match in
+            guard let found = Range(match.range, in: text) else { return false }
+            return text[found].lowercased().range(of: numeralEnding, options: .regularExpression) == nil
+        }
+    }
     static func hasAction(_ text: String) -> Bool {
         guard let regex = try? NSRegularExpression(pattern: #"\p{L}{2,}(?:ться|тся|ть|ти|чь)(?![\p{L}])"#,
                                                    options: [.caseInsensitive]) else { return false }
@@ -966,7 +984,10 @@ public enum StructuredSummary {
         func bullets(_ kind: SummaryRecord.Kind) -> [String] {
             records.filter { $0.kind == kind }.map { record in
                 let stamp = material.timestamp(for: record.evidence).map { " " + $0 } ?? ""
-                return "- " + record.text + stamp
+                // Cut like a table cell. One real call produced an "open question" of five hundred
+                // characters — a stretch of speech the extraction stage handed back whole — and it
+                // filled the section on its own. The moment it cites leads to all of it.
+                return "- " + shortened(record.text) + stamp
             }
         }
         var parts: [String] = ["## О чём", opening]
