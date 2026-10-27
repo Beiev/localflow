@@ -2,9 +2,8 @@ import Foundation
 import AVFoundation
 import ScreenCaptureKit
 import CoreMedia
-import CoreAudio
-import AudioToolbox
 import FluidAudio
+import OSLog
 
 public struct AudioPart: Codable, Sendable {
     public var file: String
@@ -19,11 +18,16 @@ public struct AudioFrame: Sendable {
     public var source: String
     public var samples: [Float]
     public var start: Double
+    public var sessionID: UUID
 }
-/// All mutable audio/file state lives on one serial queue, never the UI thread.
-public final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @unchecked Sendable {
+/// Capture configuration, callbacks, converters and files share one serial queue.
+/// The lifecycle gate also serializes start/stop across permission and ScreenCaptureKit awaits.
+public final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
+    private static let logger = Logger(subsystem: "com.beiev.localflow", category: "capture")
     private let queue = DispatchQueue(label: "LocalFlow.audio", qos: .userInitiated)
-    private var engine: AVAudioEngine?
+    private let lifecycle = AsyncGate()
+    private var microphone: AVCaptureSession?
+    private var microphoneOutput: AVCaptureAudioDataOutput?
     private var stream: SCStream?
     private var converters: [String: AVAudioConverter] = [:]
     private var writers: [String: AVAudioFile] = [:]
@@ -34,121 +38,234 @@ public final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @un
     private var paused = false
     private var running = false
     private var stopping = false
-    private var captureGeneration = UUID()
-    private var configurationObserver: NSObjectProtocol?
+    private var sessionID = UUID()
+    private var runtimeObserver: NSObjectProtocol?
+    private var watchdog: DispatchSourceTimer?
+    private var health = CaptureHealth()
+    private var failure: String?
     private var lastJournalWrite: Double = 0
     private let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
+    /// Reads the shared screen on its own output and queue when a meeting asks for it.
+    public let screen = ScreenRecorder()
     public var onFrame: (@Sendable (AudioFrame) -> Void)?
-    public var onError: (@Sendable (String) -> Void)?
+    public var onError: (@Sendable (UUID, String) -> Void)?
+    public var onStatus: (@Sendable (UUID, String) -> Void)?
     public override init() { super.init() }
-    public static func preferredMicrophone() -> AudioDeviceID? {
-        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-        var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr else { return nil }
-        var devices = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &devices) == noErr else { return nil }
-        return devices.first { device in
-            var name: CFString = "" as CFString
-            var nameSize = UInt32(MemoryLayout<CFString>.size)
-            var property = AudioObjectPropertyAddress(mSelector: kAudioObjectPropertyName, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-            guard AudioObjectGetPropertyData(device, &property, 0, nil, &nameSize, &name) == noErr else { return false }
-            return (name as String).localizedCaseInsensitiveContains("MV7")
-        }
-    }
-    public func start(id: UUID, captureSystemAudio: Bool = false, append: Bool = false) async throws {
-        guard await AVCaptureDevice.requestAccess(for: .audio) else { throw LocalFlowError.message("Разрешите доступ к микрофону в Системных настройках → Конфиденциальность → Микрофон") }
-        let previous = append ? try AudioFiles.parts(id) : []
-        let offset = previous.map { $0.start + $0.duration }.max() ?? 0
-        let generation = UUID()
-        let directory = AppPaths.audio(id)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        await withCheckedContinuation { c in queue.async { self.directory = directory; self.epoch = ProcessInfo.processInfo.systemUptime - offset; self.parts = previous; self.writers = [:]; self.partIndices = [:]; self.converters = [:]; self.running = true; self.stopping = false; self.captureGeneration = generation; self.paused = false; c.resume() } }
+
+    public func start(id: UUID, captureSystemAudio: Bool = false, captureScreen: Bool = false, append: Bool = false) async throws {
+        await lifecycle.acquire()
         do {
-            let engine = AVAudioEngine()
-            let input = engine.inputNode
-            if let device = Self.preferredMicrophone(), let unit = input.audioUnit {
-                var deviceID = device
-                let result = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0, &deviceID, UInt32(MemoryLayout<AudioDeviceID>.size))
-                guard result == noErr else { throw LocalFlowError.message("Не удалось подключить Shure MV7+. Проверьте подключение микрофона.") }
-            }
-            let inputFormat = input.outputFormat(forBus: 0)
-            guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else { throw LocalFlowError.message("Микрофон недоступен") }
-            input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, when in
-                // The tap buffer is reused by AVAudioEngine; copy before leaving the callback.
-                guard let copy = Self.copy(buffer) else { return }
-                let now = ProcessInfo.processInfo.systemUptime
-                let hostStart = when.isHostTimeValid ? AVAudioTime.seconds(forHostTime: when.hostTime) : now
-                let time = abs(hostStart - now) < 5 ? hostStart + Double(buffer.frameLength) / buffer.format.sampleRate : now
-                self?.queue.async { self?.accept(copy, source: "microphone", time: time) }
-            }
-            self.engine = engine
-            engine.prepare(); try engine.start()
-            configurationObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { [weak self] _ in
-                self?.queue.async { [weak self] in
-                    guard let self, self.running, !self.stopping, self.captureGeneration == generation else { return }
-                    self.onError?("Аудиоустройство изменилось или отключилось. Запись сохранена; выберите микрофон и начните новую запись.")
-                }
+            try Task.checkCancellation()
+            guard await AVCaptureDevice.requestAccess(for: .audio) else { throw LocalFlowError.message("Разрешите доступ к микрофону в Системных настройках → Конфиденциальность → Микрофон") }
+            try Task.checkCancellation()
+            let previous = append ? try AudioFiles.parts(id) : []
+            let offset = previous.map { $0.start + $0.duration }.max() ?? 0
+            let directory = AppPaths.audio(id)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try await onQueue {
+                guard !self.running else { throw LocalFlowError.message("Запись уже запущена") }
+                self.directory = directory; self.epoch = ProcessInfo.processInfo.systemUptime - offset
+                self.parts = previous; self.writers = [:]; self.partIndices = [:]; self.converters = [:]
+                self.running = true; self.stopping = false; self.sessionID = id; self.paused = false
+                self.failure = nil; self.lastJournalWrite = 0
+                self.health = CaptureHealth(now: ProcessInfo.processInfo.systemUptime)
+                self.persist()
+                if let failure = self.failure { throw LocalFlowError.message(failure) }
+                try self.startMicrophone(useFallback: false)
+                self.startWatchdog()
             }
             if captureSystemAudio {
                 let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+                try Task.checkCancellation()
                 guard let display = content.displays.first else { throw LocalFlowError.message("Нет экрана для захвата звука") }
-                let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
+                // Our own windows are excluded whenever pictures are taken: the recording panel
+                // and the archive must not end up in a record of what was shown.
+                let ourselves = content.applications.filter { $0.processID == getpid() }
+                let filter = SCContentFilter(display: display,
+                                             excludingApplications: captureScreen ? ourselves : [],
+                                             exceptingWindows: [])
                 let config = SCStreamConfiguration()
                 config.capturesAudio = true; config.excludesCurrentProcessAudio = true
                 config.sampleRate = 48000; config.channelCount = 2
-                config.width = 2; config.height = 2; config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+                if captureScreen {
+                    // Big enough to read text off, small enough to reduce and recognize cheaply.
+                    let scale = min(1, Double(ScreenRecorder.widestFrame) / Double(max(1, display.width)))
+                    config.width = Int(Double(display.width) * scale)
+                    config.height = Int(Double(display.height) * scale)
+                    config.minimumFrameInterval = ScreenRecorder.frameInterval
+                    config.showsCursor = false
+                    config.queueDepth = 3
+                } else {
+                    // ScreenCaptureKit requires a video configuration even for audio alone.
+                    config.width = 2; config.height = 2; config.minimumFrameInterval = CMTime(value: 1, timescale: 1)
+                }
                 let stream = SCStream(filter: filter, configuration: config, delegate: self)
                 try stream.addStreamOutput(self, type: .audio, sampleHandlerQueue: queue)
-                self.stream = stream
+                if captureScreen {
+                    screen.start(id: id, epoch: ProcessInfo.processInfo.systemUptime - offset)
+                    try stream.addStreamOutput(screen, type: .screen, sampleHandlerQueue: screen.queue)
+                }
+                try await onQueue { self.stream = stream }
                 try await stream.startCapture()
             }
-        } catch { await stop(); throw error }
+            // startRunning() alone does not prove that the microphone delivers samples.
+            // The watchdog retries a stalled input; cancellation interrupts this wait.
+            while true {
+                try Task.checkCancellation()
+                let ready = try await onQueue {
+                    if let failure = self.failure { throw LocalFlowError.message(failure) }
+                    return self.health.receivedAudio
+                }
+                if ready { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            await lifecycle.release()
+        } catch {
+            await stopCapture()
+            await lifecycle.release()
+            throw error
+        }
     }
-    public func setPaused(_ value: Bool) { queue.async { self.paused = value } }
+    private func onQueue<T>(_ operation: @escaping () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async { continuation.resume(with: Result { try operation() }) }
+        }
+    }
+    private func startMicrophone(useFallback: Bool) throws {
+        stopMicrophone()
+        let devices = AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external], mediaType: .audio, position: .unspecified).devices.filter { $0.isConnected && !$0.isSuspended }
+        let preferred = devices.first { $0.localizedName.localizedCaseInsensitiveContains("MV7") }
+        let builtIn = devices.first { $0.localizedName.localizedCaseInsensitiveContains("MacBook") }
+        guard let device = (useFallback ? builtIn : preferred) ?? AVCaptureDevice.default(for: .audio) ?? devices.first else {
+            throw LocalFlowError.message("Микрофон недоступен. Проверьте подключение и доступ в настройках macOS.")
+        }
+        let session = AVCaptureSession()
+        let input = try AVCaptureDeviceInput(device: device)
+        let output = AVCaptureAudioDataOutput()
+        guard session.canAddInput(input), session.canAddOutput(output) else { throw LocalFlowError.message("Не удалось подключить микрофон \(device.localizedName)") }
+        session.beginConfiguration()
+        session.addInput(input); session.addOutput(output)
+        output.setSampleBufferDelegate(self, queue: queue)
+        session.commitConfiguration()
+        microphone = session; microphoneOutput = output
+        runtimeObserver = NotificationCenter.default.addObserver(forName: AVCaptureSession.runtimeErrorNotification, object: session, queue: nil) { [weak self, weak session] _ in
+            self?.queue.async { [weak self, weak session] in
+                guard let self, let session, self.microphone === session, self.running, !self.stopping else { return }
+                self.recoverMicrophone()
+            }
+        }
+        Self.logger.info("Starting microphone: \(device.localizedName, privacy: .public), fallback: \(useFallback)")
+        onStatus?(sessionID, "Подключаю \(device.localizedName)…")
+        session.startRunning()
+        guard session.isRunning else { throw LocalFlowError.message("Не удалось запустить микрофон \(device.localizedName)") }
+    }
+    private func stopMicrophone() {
+        if let runtimeObserver { NotificationCenter.default.removeObserver(runtimeObserver); self.runtimeObserver = nil }
+        microphoneOutput?.setSampleBufferDelegate(nil, queue: nil)
+        microphoneOutput = nil
+        microphone?.stopRunning(); microphone = nil
+        converters["microphone"] = nil
+    }
+    private func startWatchdog() {
+        watchdog?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        timer.schedule(deadline: .now() + 0.5, repeating: 0.5)
+        timer.setEventHandler { [weak self] in
+            guard let self, self.running, !self.stopping else { return }
+            if self.health.isStalled(at: ProcessInfo.processInfo.systemUptime) { self.recoverMicrophone() }
+        }
+        watchdog = timer; timer.resume()
+    }
+    private func recoverMicrophone() {
+        guard health.beginRecovery(at: ProcessInfo.processInfo.systemUptime) else {
+            fail("Микрофон перестал передавать звук. Переподключение не помогло. Проверьте микрофон и начните запись снова; полученное аудио сохранено.")
+            return
+        }
+        Self.logger.warning("Microphone recovery attempt \(self.health.recoveries)")
+        onStatus?(sessionID, "Переподключаю микрофон…")
+        do { try startMicrophone(useFallback: health.recoveries > 1) }
+        catch {
+            // Keep the watchdog alive for the remaining bounded recovery attempt.
+            if health.recoveries >= CaptureHealth.maximumRecoveries { fail(error.localizedDescription) }
+        }
+    }
+    private func fail(_ message: String) {
+        guard failure == nil else { return }
+        Self.logger.error("Capture failed: \(message, privacy: .public)")
+        failure = message; running = false
+        watchdog?.cancel(); watchdog = nil
+        stopMicrophone()
+        writers.values.forEach { $0.close() }; writers = [:]; persist()
+        onError?(sessionID, message)
+    }
+    public func setPaused(_ value: Bool) { queue.async { self.paused = value }; screen.pause(value) }
     public func checkpoint() async {
-        await withCheckedContinuation { c in queue.async { self.writers.values.forEach { $0.close() }; self.writers = [:]; self.persist(); c.resume() } }
+        try? await onQueue { self.writers.values.forEach { $0.close() }; self.writers = [:]; self.persist() }
     }
     public func stop() async {
-        await withCheckedContinuation { c in queue.async { self.stopping = true; c.resume() } }
-        if let configurationObserver { NotificationCenter.default.removeObserver(configurationObserver); self.configurationObserver = nil }
-        engine?.inputNode.removeTap(onBus: 0); engine?.stop(); engine = nil
-        if let stream { try? await stream.stopCapture() }; stream = nil
-        await withCheckedContinuation { c in queue.async { self.running = false; self.writers.values.forEach { $0.close() }; self.writers = [:]; self.converters = [:]; self.persist(); c.resume() } }
+        await lifecycle.acquire()
+        await stopCapture()
+        await lifecycle.release()
+    }
+    private func stopCapture() async {
+        screen.stop()
+        let stream = try? await onQueue {
+            self.stopping = true; self.running = false
+            self.watchdog?.cancel(); self.watchdog = nil
+            self.stopMicrophone()
+            let stream = self.stream; self.stream = nil
+            return stream
+        }
+        if let stream { try? await stream.stopCapture() }
+        try? await onQueue {
+            self.writers.values.forEach { $0.close() }; self.writers = [:]; self.converters = [:]; self.persist()
+        }
+    }
+    public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard output === microphoneOutput, running, !stopping else { return }
+        accept(sampleBuffer, source: "microphone")
     }
     public func stream(_ stream: SCStream, didStopWithError error: Error) {
         queue.async { [weak self] in
-            guard let self, self.running, !self.stopping else { return }
-            self.onError?("Запись системного звука остановлена: \(error.localizedDescription)")
+            guard let self, self.stream === stream, self.running, !self.stopping else { return }
+            self.fail("Запись системного звука остановлена: \(error.localizedDescription)")
         }
     }
     public func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard type == .audio, sampleBuffer.isValid, let description = sampleBuffer.formatDescription,
+        guard stream === self.stream, type == .audio else { return }
+        accept(sampleBuffer, source: "system")
+    }
+    private func accept(_ sampleBuffer: CMSampleBuffer, source: String) {
+        guard sampleBuffer.isValid, let description = sampleBuffer.formatDescription,
               let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(description),
               let inputFormat = AVAudioFormat(streamDescription: asbd),
+              CMSampleBufferGetNumSamples(sampleBuffer) > 0,
               let buffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))) else { return }
         buffer.frameLength = buffer.frameCapacity
         guard CMSampleBufferCopyPCMDataIntoAudioBufferList(sampleBuffer, at: 0, frameCount: Int32(buffer.frameLength), into: buffer.mutableAudioBufferList) == noErr else { return }
         let now = ProcessInfo.processInfo.systemUptime
         let presentation = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
         let time = presentation.isFinite && abs(presentation - now) < 5 ? presentation + Double(buffer.frameLength) / buffer.format.sampleRate : now
-        accept(buffer, source: "system", time: time)
-    }
-    private static func copy(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
-        guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else { return nil }
-        copy.frameLength = buffer.frameLength
-        for (from, to) in zip(UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList), UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)) {
-            if let a = from.mData, let b = to.mData { memcpy(b, a, Int(from.mDataByteSize)) }
-        }; return copy
+        accept(buffer, source: source, time: time)
     }
     private func accept(_ buffer: AVAudioPCMBuffer, source: String, time: Double) {
-        guard running, !paused, let directory else { return }
+        guard running, !stopping, let directory else { return }
         do {
             if converters[source]?.inputFormat != buffer.format { converters[source] = AVAudioConverter(from: buffer.format, to: format) }
-            guard let converter = converters[source], let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(Double(buffer.frameLength) * 16000 / buffer.format.sampleRate + 32)) else { return }
+            guard let converter = converters[source], let output = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(Double(buffer.frameLength) * 16000 / buffer.format.sampleRate + 32)) else { throw LocalFlowError.message("Не удалось преобразовать звук микрофона") }
             var used = false; var error: NSError?
             converter.convert(to: output, error: &error) { _, status in if used { status.pointee = .noDataNow; return nil }; used = true; status.pointee = .haveData; return buffer }
             if let error { throw error }
             guard output.frameLength > 0, let channel = output.floatChannelData?[0] else { return }
+            if source == "microphone" {
+                let recovered = !health.receivedAudio
+                health.didReceiveAudio(at: ProcessInfo.processInfo.systemUptime)
+                if recovered {
+                    Self.logger.info("Microphone PCM delivery confirmed")
+                    onStatus?(sessionID, "Слушаю…")
+                }
+            }
+            guard !paused else { return }
             let duration = Double(output.frameLength) / 16000
             let start = max(0, time - epoch - duration)
             let oldIndex = partIndices[source]
@@ -162,13 +279,13 @@ public final class AudioCapture: NSObject, SCStreamOutput, SCStreamDelegate, @un
             try writers[source]?.write(from: output)
             parts[partIndices[source]!].duration += duration
             if time - lastJournalWrite >= 0.5 { persist(); lastJournalWrite = time }
-            onFrame?(AudioFrame(source: source, samples: Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength))), start: start))
-        } catch { running = false; writers.values.forEach { $0.close() }; writers = [:]; persist(); onError?("Запись остановлена: \(error.localizedDescription)") }
+            onFrame?(AudioFrame(source: source, samples: Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength))), start: start, sessionID: sessionID))
+        } catch { fail("Запись остановлена: \(error.localizedDescription)") }
     }
     private func persist() {
         guard let directory else { return }
         do { try JSONEncoder().encode(parts).write(to: directory.appendingPathComponent("parts.json"), options: .atomic) }
-        catch { onError?("Не удалось сохранить журнал аудио: \(error.localizedDescription)") }
+        catch { if failure == nil { fail("Не удалось сохранить журнал аудио: \(error.localizedDescription)") } }
     }
 }
 

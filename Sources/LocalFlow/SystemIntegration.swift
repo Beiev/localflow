@@ -10,6 +10,7 @@ final class GlobalShortcut {
     var onMeeting: (() -> Void)?
     var onCancel: (() -> Void)?
     var recording = false
+    var overlayVisible = false
     var enabled = false
     /// While the user records a new combination in Settings, events pass through.
     var suspended = false
@@ -41,7 +42,7 @@ final class GlobalShortcut {
                 if owner.meeting.matches(keyCode: key, rawFlags: event.flags.rawValue) {
                     if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 { Task { @MainActor in owner.onMeeting?() } }; return nil
                 }
-                if key == 53 && owner.recording { Task { @MainActor in owner.onCancel?() }; return nil }
+                if key == 53 && (owner.recording || owner.overlayVisible) { Task { @MainActor in owner.onCancel?() }; return nil }
                 return Unmanaged.passUnretained(event)
             }
         }, userInfo: pointer)
@@ -109,41 +110,14 @@ final class TextInsertion {
         return true
     }
 }
-@MainActor
-final class OverlayController: NSObject, NSWindowDelegate {
-    private var panel: NSPanel?
-    private var receiptTask: Task<Void, Never>?
-    func show(model: AppModel) {
-        receiptTask?.cancel()
-        if panel == nil {
-            // Titled + fullSizeContentView + transparent titlebar keeps the borderless
-            // look while unlocking native edge/corner resizing for the user.
-            let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 460, height: 204), styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView, .resizable], backing: .buffered, defer: false)
-            panel.titlebarAppearsTransparent = true
-            panel.titleVisibility = .hidden
-            for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] { panel.standardWindowButton(button)?.isHidden = true }
-            panel.level = .floating; panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            panel.isFloatingPanel = true; panel.hidesOnDeactivate = false; panel.isMovableByWindowBackground = true
-            panel.contentMinSize = NSSize(width: 380, height: 216)
-            panel.contentMaxSize = NSSize(width: 1280, height: 900)
-            panel.backgroundColor = .clear; panel.isOpaque = false; panel.hasShadow = true; panel.delegate = self
-            if let size = UserDefaults.standard.string(forKey: "overlaySize").map(NSSizeFromString), size.width >= panel.contentMinSize.width, size.height >= panel.contentMinSize.height {
-                panel.setFrame(NSRect(origin: .zero, size: size), display: false)
-            }
-            panel.contentView = NSHostingView(rootView: OverlayView(model: model))
-            self.panel = panel
-        }
-        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main!
-        let saved = UserDefaults.standard.string(forKey: "overlayOrigin").map(NSPointFromString)
-        let origin = saved.flatMap { p in NSScreen.screens.contains { $0.visibleFrame.contains(NSRect(origin: p, size: panel!.frame.size)) } ? p : nil } ?? NSPoint(x: screen.visibleFrame.midX - panel!.frame.width / 2, y: screen.visibleFrame.minY + 32)
-        panel?.setFrameOrigin(origin); panel?.orderFrontRegardless()
-    }
-    func showReceipt(model: AppModel) {
-        show(model: model)
-        receiptTask = Task { try? await Task.sleep(for: .seconds(10)); guard !Task.isCancelled else { return }; panel?.orderOut(nil) }
-    }
-    func hide() { receiptTask?.cancel(); panel?.orderOut(nil) }
-    func windowDidMove(_ notification: Notification) { if let panel { UserDefaults.standard.set(NSStringFromPoint(panel.frame.origin), forKey: "overlayOrigin") } }
-    func windowDidResize(_ notification: Notification) { if let panel { UserDefaults.standard.set(NSStringFromSize(panel.frame.size), forKey: "overlaySize") } }
-}
 import SwiftUI
+
+extension OverlayController {
+    func prepare(model: AppModel) {
+        prepare(content: AnyView(OverlayView(model: model).environment(\.colorScheme, .dark)))
+    }
+    func show(model: AppModel) {
+        onVisibilityChange = { [weak shortcut = model.shortcut] visible in shortcut?.overlayVisible = visible }
+        show(content: AnyView(OverlayView(model: model).environment(\.colorScheme, .dark)))
+    }
+}

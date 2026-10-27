@@ -1,0 +1,46 @@
+{
+  "cold_processing_seconds": {
+    "count": 1,
+    "p50": 22.69333008333342,
+    "p95": 22.69333008333342
+  },
+  "editor": "editor",
+  "runs": [
+    {
+      "asr_seconds": 18.839361791673582,
+      "audio_seconds": 28.587625000000003,
+      "delivered_characters": 230,
+      "edit_seconds": 3.8539682916598395,
+      "guarded": false,
+      "issues": [],
+      "processing_seconds": 22.69333008333342,
+      "warm": false
+    },
+    {
+      "asr_seconds": 0.337168833357282,
+      "audio_seconds": 28.587625000000003,
+      "delivered_characters": 230,
+      "edit_seconds": 1.1678031666669995,
+      "guarded": false,
+      "issues": [],
+      "processing_seconds": 1.5049720000242814,
+      "warm": true
+    },
+    {
+      "asr_seconds": 0.2888009166927077,
+      "audio_seconds": 28.587625000000003,
+      "delivered_characters": 230,
+      "edit_seconds": 1.1946401249733754,
+      "guarded": false,
+      "issues": [],
+      "processing_seconds": 1.483441041666083,
+      "warm": true
+    }
+  ],
+  "scope": "audio_replay_without_capture_or_paste",
+  "warm_processing_seconds": {
+    "count": 2,
+    "p50": 1.483441041666083,
+    "p95": 1.5049720000242814
+  }
+}

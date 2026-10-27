@@ -2,55 +2,51 @@ import SwiftUI
 import AppKit
 import LocalFlowCore
 
-// MARK: - Floating dictation overlay
+/// Meter ticks invalidate only the waveform, not the archive, transcript, menu
+/// and the rest of AppModel's observers 30 times per second.
+@MainActor
+final class RecordingMeter: ObservableObject {
+    @Published var levels: [Double] = []
+    func append(_ level: Double) {
+        var next = Array(levels.suffix(119))
+        next.append(level)
+        levels = next
+    }
+}
+
+private struct RecordingWaveform: View {
+    @ObservedObject var meter: RecordingMeter
+    var color: Color
+    var body: some View { VoiceWaveform(levels: meter.levels, color: color) }
+}
+
+// MARK: - Notch dictation overlay
 
 struct OverlayView: View {
     @ObservedObject var model: AppModel
-    private var wordCount: Int { (model.stableText + " " + model.draftText).split(whereSeparator: \.isWhitespace).filter { !$0.isEmpty }.count }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                if model.processing { ProgressView().controlSize(.mini) }
-                Text(model.status).font(.system(size: 11, weight: .medium)).lineLimit(1).layoutPriority(1)
-                if model.isRecording && wordCount > 0 {
-                    Text("\(wordCount) \(wordCount.ruWordForm)").font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
-                }
-                Spacer()
-                Text(Duration.seconds(model.elapsed).formatted(.time(pattern: .minuteSecond))).monospacedDigit().font(.caption).foregroundStyle(.secondary)
-                Button { model.showMain() } label: { Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 11)) }.help("Развернуть")
-                Button { if model.isRecording && model.active?.kind != .meeting { model.stop() } else { model.overlay.hide() } } label: { Image(systemName: "xmark").font(.system(size: 11)) }.help("Завершить диктовку и скрыть окно")
+            HStack(spacing: 8) {
+                Circle().fill(model.isRecording && !model.isStarting ? Color.red : Color.white.opacity(0.55)).frame(width: 6, height: 6)
+                Text(model.status).font(.system(size: 11, weight: .medium)).lineLimit(2)
+                Spacer(minLength: 8)
+                Text(RussianDates.length(model.elapsed))
+                    .monospacedDigit().font(.system(size: 11)).foregroundStyle(.secondary)
             }
-            .foregroundStyle(.secondary)
-            if model.isRecording || model.processing {
-                VoiceWaveform(levels: model.waveform, color: model.isRecording ? .red : FlowTheme.accent)
-                    .frame(height: 20)
-                    .opacity(model.isRecording ? 1 : 0.35)
-            }
-            // The transcript flexes with the window: small overlay shows a couple of
-            // lines, a stretched one shows the whole dictation.
-            LiveTranscriptView(stable: model.stableText.isEmpty && model.draftText.isEmpty ? (model.processing ? "Готовлю текст…" : "Говорите — слова появятся здесь") : model.stableText, draft: model.draftText)
-                .frame(minHeight: 44, maxHeight: .infinity, alignment: .top)
-            HStack {
-                Text(model.dictationLabel).font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 6).padding(.vertical, 3).background(.quaternary, in: Capsule())
+            RecordingWaveform(meter: model.recordingMeter, color: Color(red: 0.65, green: 0.78, blue: 1))
+                .frame(height: 18).opacity(model.isRecording ? 1 : 0.35)
+            LiveTranscriptView(stable: model.stableText.isEmpty && model.draftText.isEmpty
+                ? (model.isStarting ? "Говорите после «Слушаю…»" : (model.isRecording ? "Говорите — слова появятся здесь" : ""))
+                : model.stableText, draft: model.draftText, fontSize: 14)
+                .frame(maxHeight: .infinity, alignment: .top)
+            HStack(spacing: 5) {
+                Text(model.dictationLabel + " завершить")
+                Text("·")
+                Text("esc отменить")
                 Spacer()
-                if model.isRecording {
-                    if model.active?.kind != .dictation { Button(model.paused ? "Продолжить" : "Пауза") { model.pause() } }
-                    Button("Отмена") { model.cancel() }
-                    Button("Готово") { model.stop() }.buttonStyle(.borderedProminent).tint(FlowTheme.accent)
-                } else if model.processing {
-                    Button("Отмена") { model.cancel() }
-                } else {
-                    Button("Скопировать") { model.copyResult() }
-                    Button("Вставить") { model.pasteResult() }.buttonStyle(.borderedProminent).tint(FlowTheme.accent)
-                }
-            }.font(.caption)
+            }.font(.system(size: 10)).foregroundStyle(.tertiary)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .buttonStyle(.plain).padding(14)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: FlowTheme.overlayRadius))
-        .overlay(RoundedRectangle(cornerRadius: FlowTheme.overlayRadius).strokeBorder(.white.opacity(0.15)))
-        .padding(3)
-        .animation(.easeInOut(duration: 0.2), value: model.isRecording)
+        .foregroundStyle(.white.opacity(0.85))
     }
 }
 
@@ -59,6 +55,8 @@ struct OverlayView: View {
 struct MainView: View {
     @ObservedObject var model: AppModel
     @State private var search = ""
+    @State private var results: [RecordingSession] = []
+    @State private var searching = false
     var body: some View {
         NavigationSplitView {
             VStack(alignment: .leading, spacing: 18) {
@@ -122,17 +120,14 @@ struct MainView: View {
                 if model.processing { Image(systemName: "sparkles").foregroundStyle(FlowTheme.accent) }
                 Text(model.status).fontWeight(.medium)
                 Spacer()
-                Text(Duration.seconds(model.elapsed).formatted(.time(pattern: .minuteSecond))).monospacedDigit()
-                // The floating window belongs to dictation; a meeting is driven from here and
-                // from the menu bar item.
-                if model.active?.kind != .meeting { Button("Показать окно") { model.overlay.show(model: model) } }
+                Text(RussianDates.length(model.elapsed)).monospacedDigit()
                 if model.isRecording {
                     Button(model.paused ? "Продолжить" : "Пауза") { model.pause() }
                     Button("Завершить") { model.stop() }.buttonStyle(.borderedProminent)
                 }
             }
             if model.isRecording {
-                VoiceWaveform(levels: model.waveform, color: .red).frame(height: 20)
+                RecordingWaveform(meter: model.recordingMeter, color: .red).frame(height: 20)
             }
             LiveTranscriptView(stable: model.liveSegments.suffix(50).map { $0.text }.joined(separator: "\n"), draft: model.liveTails.keys.sorted().compactMap { model.liveTails[$0] }.joined(separator: "\n"), fontSize: 14)
                 .frame(height: 140)
@@ -150,18 +145,45 @@ struct MainView: View {
     private var archive: some View {
         HSplitView {
             VStack(alignment: .leading, spacing: 12) {
-                HStack { SectionHeader(title: "Архив", subtitle: model.sessions.isEmpty ? nil : "\(model.sessions.count) записей"); Spacer() }.padding(.horizontal, 16).padding(.top, 20)
-                TextField("Найти в записях", text: $search).textFieldStyle(.roundedBorder).padding(.horizontal, 16)
+                HStack {
+                    SectionHeader(title: "Архив", subtitle: search.isEmpty
+                        ? (model.sessions.isEmpty ? nil : RussianDates.counted(model.sessions.count, "запись", "записи", "записей"))
+                        : "\(results.count) найдено")
+                    Spacer()
+                }.padding(.horizontal, 16).padding(.top, 20)
+                searchField.padding(.horizontal, 16)
+                ScrollViewReader { scroller in
                 ScrollView {
-                    VStack(spacing: 4) {
-                        ForEach(filteredSessions) { session in
-                            Button { model.selection = session.id } label: {
-                                SessionRow(session: session, selected: model.selection == session.id)
+                    LazyVStack(alignment: .leading, spacing: 4, pinnedViews: [.sectionHeaders]) {
+                        // By day, because 264 records in one run read as a dump. The two nearest
+                        // days are called by name; the rest by date.
+                        ForEach(archiveDays, id: \.label) { day in
+                            Section {
+                                ForEach(day.sessions) { session in
+                                    Button { model.selection = session.id } label: {
+                                        SessionRow(session: session, selected: model.selection == session.id)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.horizontal, 10)
+                                    .id(session.id)
+                                }
+                            } header: {
+                                Text(day.label)
+                                    .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                                    .padding(.horizontal, 20).padding(.vertical, 6)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(.bar)
                             }
-                            .buttonStyle(.plain)
-                            .padding(.horizontal, 10)
                         }
                     }.padding(.vertical, 8)
+                }
+                // Up and down move through the archive, as they do in every list on this system.
+                .focusable()
+                .onMoveCommand { direction in
+                    guard let moved = neighbour(of: model.selection, direction: direction) else { return }
+                    model.selection = moved
+                    withAnimation(.easeOut(duration: 0.12)) { scroller.scrollTo(moved, anchor: .center) }
+                }
                 }
             }.frame(minWidth: 250, idealWidth: 300, maxWidth: 370)
             if let session = model.selectedSession {
@@ -171,6 +193,29 @@ struct MainView: View {
             else { archiveEmpty }
         }
     }
+    /// The record above or below the selected one, in the order the list is shown.
+    private func neighbour(of selection: UUID?, direction: MoveCommandDirection) -> UUID? {
+        let order = filteredSessions.map(\.id)
+        guard !order.isEmpty else { return nil }
+        guard let selection, let index = order.firstIndex(of: selection) else { return order.first }
+        switch direction {
+        case .up: return index > 0 ? order[index - 1] : nil
+        case .down: return index + 1 < order.count ? order[index + 1] : nil
+        default: return nil
+        }
+    }
+
+    /// The archive in the order it is read: newest first, grouped by the day it happened.
+    private var archiveDays: [(label: String, sessions: [RecordingSession])] {
+        var days: [(label: String, sessions: [RecordingSession])] = []
+        for session in filteredSessions {
+            let label = RussianDates.dayLabel(session.createdAt)
+            if days.last?.label == label { days[days.count - 1].sessions.append(session) }
+            else { days.append((label, [session])) }
+        }
+        return days
+    }
+
     private var archiveEmpty: some View {
         VStack(spacing: 18) {
             Image(systemName: "waveform.circle.fill").font(.system(size: 64)).foregroundStyle(FlowTheme.accent.opacity(0.85))
@@ -182,7 +227,32 @@ struct MainView: View {
             ArchiveQuestionView(model: model, session: nil).padding(.top, 20).frame(maxWidth: 560)
         }.padding(32).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
-    private var filteredSessions: [RecordingSession] { search.isEmpty ? model.sessions : ((try? model.store.search(search, limit: 100)) ?? []).map(\.session) }
+    /// Full-text search ran inside a computed property, so every redraw of the window — a meter
+    /// tick included — re-queried SQLite while the query was still being typed.
+    private var searchField: some View {
+        HStack(spacing: 7) {
+            Image(systemName: "magnifyingglass").font(.caption).foregroundStyle(.secondary)
+            TextField("Найти в записях", text: $search).textFieldStyle(.plain)
+            if searching { ProgressView().controlSize(.small) }
+            else if !search.isEmpty {
+                Button { search = "" } label: { Image(systemName: "xmark.circle.fill") }
+                    .buttonStyle(.plain).foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, 9).padding(.vertical, 6)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+        .task(id: search) {
+            let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !query.isEmpty else { results = []; searching = false; return }
+            searching = true
+            // Typing is not a query. Only a pause is.
+            do { try await Task.sleep(for: .milliseconds(220)) } catch { return }
+            let found = (try? model.store.search(query, limit: 100))?.map(\.session) ?? []
+            guard !Task.isCancelled else { return }
+            results = found; searching = false
+        }
+    }
+    private var filteredSessions: [RecordingSession] { search.isEmpty ? model.sessions : results }
 }
 
 private struct SessionRow: View {
@@ -197,10 +267,10 @@ private struct SessionRow: View {
                     if session.pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
                 }
                 HStack(spacing: 6) {
-                    Text(session.createdAt.formatted(date: .abbreviated, time: .shortened))
-                    if session.duration > 0 { Text("·"); Text(Duration.seconds(session.duration).formatted(.time(pattern: .minuteSecond))) }
+                    Text(RussianDates.dayAndTime(session.createdAt))
+                    if session.duration > 0 { Text("·"); Text(RussianDates.length(session.duration)) }
                 }.font(.caption).foregroundStyle(.secondary)
-                Text(session.rawText.isEmpty ? session.kind.shortTitle : String(session.rawText.prefix(110))).font(.caption).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
+                Text(String(session.preview.prefix(140))).font(.caption).foregroundStyle(.secondary).lineLimit(2).multilineTextAlignment(.leading)
                 if session.state == "interrupted" { Label("Можно восстановить", systemImage: "arrow.clockwise").font(.caption).foregroundStyle(.orange) }
             }
             Spacer(minLength: 0)
@@ -213,109 +283,356 @@ private struct SessionRow: View {
 
 // MARK: - Session detail (dictations, meetings)
 
+/// One record, shown as what the reader came for: the condensed document, the transcript itself,
+/// or the raw recognition. Before this the transcript was reachable only through an unlabelled
+/// version menu that reset to the summary every time the record was opened, so after a meeting
+/// was condensed there was nowhere to read what had actually been said.
 struct SessionView: View {
     @ObservedObject var model: AppModel
     let session: RecordingSession
-    @State private var selectedVersion = -1
+
+    enum Pane: Hashable { case primary, transcript, screen, source, version(Int) }
+
+    @State private var pane: Pane?
     @State private var editText = ""
     @State private var editing = false
     @State private var newTitle = ""
     @State private var deletePrompt = false
-    @State private var speakerNames: [String: String] = [:]
     @State private var heard = ""
     @State private var preferred = ""
+    @State private var copiedLabel: String?
+    @FocusState private var renaming: Bool
+
     var current: RecordingSession { model.sessions.first { $0.id == session.id } ?? session }
-    var shownText: String { if selectedVersion >= 0 && selectedVersion < current.versions.count { return current.versions[selectedVersion].text }; return current.referencedText }
+    private var busy: Bool { model.processing || model.isRecording }
+    private var isMeeting: Bool { current.kind == .meeting }
+
+    /// Tabs follow the material: a meeting has a summary, a transcript and the recognition; a
+    /// dictation's recognition already is its transcript, so it has no third tab.
+    private var panes: [Pane] {
+        var value: [Pane] = []
+        if isMeeting {
+            if current.summary != nil { value.append(.primary) }
+            value.append(.transcript)
+            if !current.screen.isEmpty { value.append(.screen) }
+        } else if current.versions.last != nil {
+            value.append(.primary)
+        }
+        value.append(.source)
+        return value
+    }
+    private var selected: Pane { pane ?? panes.first ?? .source }
+
+    private func title(for pane: Pane) -> String {
+        switch pane {
+        case .primary: return isMeeting ? "Конспект" : "Текст"
+        case .transcript: return "Расшифровка"
+        case .screen: return "Экран"
+        case .source: return "Исходник"
+        case .version(let index):
+            // Reprocessing replaces the version list while a version tab is open; an unchecked
+            // subscript here would take the window down with it.
+            guard index < current.versions.count else { return "Версия" }
+            return current.versions[index].label ?? current.versions[index].mode.title
+        }
+    }
+    private var primaryVersion: TextVersion? { isMeeting ? current.summary : current.versions.last }
+    /// Versions that are not one of the tabs: a rejected proposal, a spec, a task list, a
+    /// dictation made during the call.
+    private var extraVersions: [(index: Int, version: TextVersion)] {
+        current.versions.enumerated().compactMap { index, version in
+            if version.id == primaryVersion?.id { return nil }
+            if version.id == current.cleanTranscript?.id { return nil }
+            return (index, version)
+        }.reversed()
+    }
+    /// What the copy button copies and the editor edits.
+    private var shownText: String {
+        switch selected {
+        case .primary: primaryVersion?.text ?? current.referencedText
+        case .transcript: current.cleanTranscript?.text ?? current.referencedText
+        case .screen: current.screenDocument
+        case .source: current.referencedText
+        case .version(let index): index < current.versions.count ? current.versions[index].text : ""
+        }
+    }
+
+    /// Long lines are hard to read. The note page already holds itself to a column; a meeting,
+    /// which is longer than any note, was running the full width of the window.
+    private static let readingWidth: CGFloat = 820
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Pinned: with the tabs inside the scroll, a long summary put the switch between
+            // "Конспект" and "Расшифровка" — and the copy button — out of reach until you
+            // scrolled back to the top.
+            VStack(alignment: .leading, spacing: 14) {
+                header
+                toolbar
+            }
+            // Padded inside the column, like the text below it, so the title lines up with the
+            // first line of the document rather than sitting 28 points to the left of it.
+            .padding(.horizontal, 28).padding(.top, 24).padding(.bottom, 14)
+            .frame(maxWidth: Self.readingWidth, alignment: .leading)
+            .frame(maxWidth: .infinity)
+            .background(.bar)
+            Divider()
+            scrollingContent
+        }
+        .frame(minWidth: 460, maxWidth: .infinity)
+        .onAppear { newTitle = current.title }
+        // The name taken from the topics arrives while the window is already open, and must not
+        // overwrite what is being typed into the field at that moment.
+        .onChange(of: current.title) { _, value in if !renaming { newTitle = value } }
+        .onChange(of: current.versions.count) { _, _ in if pane == nil || !panes.contains(selected) { pane = panes.first } }
+        .confirmationDialog("Удалить запись, текст и аудио?", isPresented: $deletePrompt) {
+            Button("Удалить запись", role: .destructive) { model.delete(current) }
+        }
+    }
+
+    private var scrollingContent: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                HStack(alignment: .top, spacing: 14) {
-                    KindBadge(kind: current.kind, size: 36)
-                    VStack(alignment: .leading, spacing: 6) {
-                        TextField("Название", text: $newTitle).font(.title2.bold()).textFieldStyle(.plain).onSubmit { var value = current; value.title = newTitle; model.save(value) }
-                        HStack(spacing: 8) {
-                            Text(current.kind.title); Text("·"); Text(current.createdAt.formatted())
-                            if current.duration > 0 { Text("·"); Text(Duration.seconds(current.duration).formatted(.time(pattern: .minuteSecond))) }
-                        }.font(.caption).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button { var value = current; value.pinned.toggle(); model.save(value) } label: { Image(systemName: current.pinned ? "pin.fill" : "pin") }.help("Сохранить аудио без срока удаления")
-                    Button(role: .destructive) { deletePrompt = true } label: { Image(systemName: "trash") }.disabled(model.processing || model.isRecording)
+            VStack(alignment: .leading, spacing: 18) {
+                if let error = current.error {
+                    Label(error, systemImage: "exclamationmark.circle").font(.callout).foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12).background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 9))
                 }
-                if let error = current.error { Label(error, systemImage: "exclamationmark.circle").font(.callout).foregroundStyle(.orange) }
-                HStack {
-                    Menu { ForEach(ProcessingMode.allCases, id: \.self) { mode in Button(mode.title) { model.transform(current, mode: mode) } } } label: { Label("Обработать", systemImage: "wand.and.stars") }.disabled(model.processing || model.isRecording)
-                    Button { model.retry(current) } label: { Label("Повторить", systemImage: "arrow.clockwise") }.disabled(model.processing || model.isRecording)
-                    Button { model.export(current, text: shownText) } label: { Label("Экспорт", systemImage: "square.and.arrow.up") }
-                    Spacer()
-                    Picker("Версия", selection: $selectedVersion) { Text("Исходная расшифровка").tag(-1); ForEach(Array(current.versions.enumerated()), id: \.element.id) { index, item in Text("\(item.label ?? item.mode.title) · \(item.date.formatted(date: .omitted, time: .shortened))").tag(index) } }
-                        .pickerStyle(.menu).labelsHidden()
-                        .disabled(current.versions.isEmpty)
+                if busy && model.isWorkingOn(current.id) {
+                    HStack(spacing: 10) { ProgressView().controlSize(.small); Text(model.status).font(.callout).foregroundStyle(.secondary) }
                 }
-                if editing {
-                    VStack(alignment: .leading, spacing: 12) {
-                        TextEditor(text: $editText).font(.body).frame(minHeight: 300).padding(4).background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
-                        HStack { Button("Отмена") { editing = false }; Button("Сохранить версию") { var value = current; value.versions.append(.init(mode: .clean, text: editText)); model.save(value); selectedVersion = value.versions.count - 1; editing = false }.buttonStyle(.borderedProminent) }
+                if isMeeting { ParticipantsView(model: model, session: current, compact: true) }
+                content
+                footer
+                Divider()
+                ArchiveQuestionView(model: model, session: current)
+            }
+            .padding(28)
+            .frame(maxWidth: Self.readingWidth, alignment: .leading)
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    /// An empty field is not a name: the record keeps the one it has.
+    private func commitTitle() {
+        let value = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty, value != current.title else { newTitle = current.title; return }
+        model.rename(current, to: value)
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 14) {
+            KindBadge(kind: current.kind, size: 36)
+            VStack(alignment: .leading, spacing: 5) {
+                TextField("Название", text: $newTitle).font(.title2.bold()).textFieldStyle(.plain)
+                    .focused($renaming)
+                    .onSubmit { commitTitle() }
+                    // A name typed and then clicked away from used to be lost: the field only
+                    // committed on Enter, and nothing about it said so.
+                    .onChange(of: renaming) { _, active in if !active { commitTitle() } }
+                HStack(spacing: 7) {
+                    Text(current.kind.title)
+                    Text("·"); Text(RussianDates.dayAndTime(current.createdAt))
+                    if current.duration > 0 { Text("·"); Text(RussianDates.length(current.duration)) }
+                    if isMeeting, current.participantCount > 1 {
+                        Text("·"); Text(RussianDates.counted(current.participantCount, "участник", "участника", "участников"))
                     }
-                } else if selectedVersion == -1 {
-                    VStack(alignment: .leading, spacing: 14) {
-                        ForEach(current.segments.sorted { $0.start < $1.start }) { segment in
-                            HStack(alignment: .top, spacing: 12) {
-                                Button(segment.timestamp) { model.play(current, at: segment.start, source: segment.source) }.font(.caption.monospaced()).foregroundStyle(FlowTheme.accent)
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(current.speakerName(segment.speaker, source: segment.source)).font(.caption2.weight(.semibold)).foregroundStyle(.secondary).padding(.horizontal, 7).padding(.vertical, 2).background(Color.primary.opacity(0.06), in: Capsule())
-                                    Text(segment.text).textSelection(.enabled)
-                                }
-                            }
+                }.font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button { var value = current; value.pinned.toggle(); model.save(value) } label: {
+                Image(systemName: current.pinned ? "pin.fill" : "pin")
+            }.buttonStyle(.borderless).help("Сохранить аудио без срока удаления")
+            Menu {
+                Button("Экспорт в Markdown…") { model.export(current, text: shownText) }
+                Button("Редактировать текст") { editText = shownText; editing = true }.disabled(shownText.isEmpty)
+                Divider()
+                Menu("Обработать заново") {
+                    ForEach(ProcessingMode.available(for: current.kind), id: \.self) { mode in
+                        Button(mode.title) { model.transform(current, mode: mode) }
+                    }
+                }.disabled(busy)
+                Button("Повторить обработку") { model.retry(current) }.disabled(busy)
+                Divider()
+                Button("Удалить запись", role: .destructive) { deletePrompt = true }.disabled(busy)
+            } label: { Image(systemName: "ellipsis.circle") }
+            .menuStyle(.borderlessButton).fixedSize()
+        }
+    }
+
+    private var toolbar: some View {
+        HStack(spacing: 10) {
+            if panes.count > 1 {
+                Picker("", selection: Binding(get: { selected }, set: { pane = $0 })) {
+                    ForEach(panes, id: \.self) { Text(title(for: $0)).tag($0) }
+                }.pickerStyle(.segmented).labelsHidden().fixedSize()
+            }
+            if !extraVersions.isEmpty {
+                Menu {
+                    ForEach(extraVersions, id: \.index) { item in
+                        Button("\(item.version.label ?? item.version.mode.title) · \(RussianDates.time(item.version.date))") {
+                            pane = .version(item.index)
                         }
                     }
-                    if current.segments.isEmpty { Text("Расшифровка появится после обработки.").foregroundStyle(.secondary) }
-                } else {
-                    Text(shownText).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).lineSpacing(5)
+                } label: {
+                    Label(isVersionPane ? title(for: selected) : "Ещё версии", systemImage: "clock.arrow.circlepath")
+                }.menuStyle(.borderlessButton).fixedSize()
+            }
+            Spacer()
+            if model.isPlaying { Button { model.stopPlayback() } label: { Label("Остановить", systemImage: "stop.fill") } }
+            copyControl
+        }
+    }
+    private var isVersionPane: Bool { if case .version = selected { return true }; return false }
+
+    private var copyControl: some View {
+        HStack(spacing: 2) {
+            Button { copy(shownText, as: "Скопировано") } label: {
+                Label(copiedLabel ?? "Скопировать", systemImage: copiedLabel == nil ? "doc.on.doc" : "checkmark")
+            }.disabled(shownText.isEmpty)
+            Menu {
+                Button("Скопировать без разметки") { copy(RichText.plain(shownText), as: "Скопировано") }
+                if let summary = current.summary {
+                    Button("Скопировать конспект") { copy(summary.text, as: "Конспект скопирован") }
                 }
+                Button("Скопировать расшифровку") { copy(current.cleanTranscript?.text ?? current.referencedText, as: "Расшифровка скопирована") }
+                if isMeeting, current.summary != nil {
+                    Button("Скопировать письмо после созвона") { copy(current.followUpLetter, as: "Письмо скопировано") }
+                }
+                Divider()
+                Button("Скопировать конспект и расшифровку") { copy(current.shareableDocument, as: "Скопировано целиком") }
+            } label: { Image(systemName: "chevron.down").font(.caption2) }
+                .menuStyle(.borderlessButton).fixedSize()
+        }
+    }
+    private func copy(_ text: String, as label: String) {
+        guard !text.isEmpty else { return }
+        model.copyText(text)
+        copiedLabel = label
+        Task { try? await Task.sleep(for: .seconds(1.6)); copiedLabel = nil }
+    }
+
+    @ViewBuilder private var content: some View {
+        if editing {
+            VStack(alignment: .leading, spacing: 12) {
+                TextEditor(text: $editText).font(.body).frame(minHeight: 320).padding(4)
+                    .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
                 HStack {
-                    Button { model.copyText(shownText) } label: { Label("Скопировать", systemImage: "doc.on.doc") }.disabled(shownText.isEmpty)
-                    Button { editText = shownText; editing = true } label: { Label("Редактировать", systemImage: "pencil") }.disabled(shownText.isEmpty)
-                    if model.isPlaying { Button("Остановить воспроизведение") { model.stopPlayback() } }
-                    Spacer()
+                    Button("Отмена") { editing = false }
+                    Button("Сохранить версию") {
+                        var value = current
+                        value.versions.append(.init(mode: .clean, text: editText, label: "Правка вручную"))
+                        model.save(value); pane = .version(value.versions.count - 1); editing = false
+                    }.buttonStyle(.borderedProminent)
                 }
-                DisclosureGroup { dictionaryRow } label: { Label("Запомнить исправление", systemImage: "text.badge.checkmark").font(.callout.weight(.medium)) }
-                if current.kind == .meeting {
-                    DisclosureGroup {
-                        Picker("Собеседников", selection: Binding(get: { current.expectedRemoteSpeakers ?? 0 }, set: { count in var value = current; value.expectedRemoteSpeakers = count == 0 ? nil : count; model.save(value) })) {
+            }
+        } else {
+            switch selected {
+            case .source: sourceTurns
+            case .screen: screenMoments
+            case .transcript where current.cleanTranscript == nil: transcriptInvitation
+            default:
+                if shownText.isEmpty { Text("Здесь пока ничего нет.").foregroundStyle(.secondary) }
+                else { FormattedText(markdown: shownText) { seconds in model.playMoment(current, at: seconds) } }
+            }
+        }
+    }
+
+    /// The recognition as it stands, one block per turn, each openable in the audio.
+    private var sourceTurns: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if current.segments.isEmpty {
+                Text("Расшифровка появится после обработки.").foregroundStyle(.secondary)
+            }
+            ForEach(current.segments.sorted { $0.start < $1.start }) { segment in
+                HStack(alignment: .top, spacing: 12) {
+                    Button(segment.timestamp) { model.play(current, at: segment.start, source: segment.source) }
+                        .buttonStyle(.plain).font(.caption.monospaced()).foregroundStyle(FlowTheme.accent)
+                        .frame(width: 42, alignment: .leading).padding(.top, 3)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(current.speakerName(segment.speaker, source: segment.source))
+                            .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                        Text(segment.text).textSelection(.enabled).lineSpacing(3)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    /// What the shared screen showed, as moments rather than frames: no picture was kept, only
+    /// the text that was read off it and the window it belonged to.
+    private var screenMoments: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Читалось с показанного экрана: текст и заголовки окон. Кадры и видео не сохраняются.")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            ForEach(current.screen) { moment in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Button(moment.timestamp) { model.playMoment(current, at: moment.start) }
+                            .buttonStyle(.plain).font(.caption.monospaced()).foregroundStyle(FlowTheme.accent)
+                        Text(moment.title).font(.callout.weight(.medium)).lineLimit(1)
+                        if moment.duration >= 30 {
+                            Text(RussianDates.length(moment.duration))
+                                .font(.caption2).foregroundStyle(.tertiary)
+                        }
+                        Spacer(minLength: 0)
+                        if let app = moment.app, !app.isEmpty, app != moment.title {
+                            Text(app).font(.caption2).foregroundStyle(.secondary)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Color.primary.opacity(0.06), in: Capsule())
+                        }
+                    }
+                    Text(moment.text).font(.callout).lineSpacing(3).textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(12)
+                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
+            }
+        }
+    }
+
+    private var transcriptInvitation: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Чистая расшифровка").font(.headline)
+            Text("Весь разговор построчно, как он был: заполнители и заикания убраны, пунктуация расставлена, "
+                 + "реплики, имена, числа и порядок — без изменений. Собирается локально и занимает несколько минут.")
+                .foregroundStyle(.secondary).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Button { model.transform(current, mode: .transcript) } label: { Label("Сделать расшифровку", systemImage: "text.alignleft") }
+                    .buttonStyle(.borderedProminent).disabled(busy || current.segments.isEmpty)
+                Button("Пока показать исходник") { pane = .source }
+            }
+        }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            DisclosureGroup { dictionaryRow } label: {
+                Label("Запомнить исправление", systemImage: "text.badge.checkmark").font(.callout.weight(.medium))
+            }
+            if isMeeting {
+                DisclosureGroup {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Picker("Собеседников", selection: Binding(get: { current.expectedRemoteSpeakers ?? 0 }, set: { count in
+                            var value = current; value.expectedRemoteSpeakers = count == 0 ? nil : count; model.save(value)
+                        })) {
                             Text("Автоматически").tag(0)
                             ForEach(1...16, id: \.self) { Text("\($0)").tag($0) }
                         }
-                        Button("Пересчитать участников") { model.retry(current) }.disabled(model.processing || model.isRecording)
-                    } label: { Label("Уточнить разделение голосов", systemImage: "person.2").font(.callout.weight(.medium)) }
-                }
-                if !current.embeddings.isEmpty {
-                    DisclosureGroup {
-                        ForEach(current.embeddings.keys.sorted(), id: \.self) { id in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(current.speakerName(id, source: "system")).font(.caption.bold())
-                                HStack {
-                                    TextField("Имя участника", text: Binding(get: { speakerNames[id] ?? current.speakers[id] ?? "" }, set: { speakerNames[id] = $0 })).textFieldStyle(.roundedBorder)
-                                    Button("Сохранить имя") {
-                                        var value = current
-                                        let name = (speakerNames[id] ?? current.speakers[id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                                        value.speakers[id] = name.isEmpty ? nil : name; model.save(value)
-                                    }
-                                    Button("Запомнить голос") { model.saveVoice(speakerNames[id] ?? current.speakers[id] ?? "", embedding: current.embeddings[id] ?? []) }
-                                        .disabled((speakerNames[id] ?? current.speakers[id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                                }
-                            }.padding(.top, 12)
-                        }
-                    } label: { Label("Участники и знакомые голоса", systemImage: "waveform.badge.person").font(.callout.weight(.medium)) }
-                }
-                Divider()
-                ArchiveQuestionView(model: model, session: current)
-            }.padding(28)
-        }.frame(minWidth: 420, maxWidth: .infinity)
-        .onAppear { newTitle = current.title; selectedVersion = current.versions.count - 1 }
-        .onChange(of: current.versions.count) { _, count in selectedVersion = count - 1 }
-        .confirmationDialog("Удалить запись, текст и аудио?", isPresented: $deletePrompt) { Button("Удалить запись", role: .destructive) { model.delete(current) } }
+                        Button("Пересчитать участников") { model.retry(current) }.disabled(busy)
+                    }.padding(.top, 8)
+                } label: { Label("Уточнить разделение голосов", systemImage: "person.2").font(.callout.weight(.medium)) }
+            }
+            if isMeeting, !current.segments.isEmpty {
+                DisclosureGroup {
+                    ParticipantsView(model: model, session: current).padding(.top, 12)
+                } label: { Label("Участники и знакомые голоса", systemImage: "waveform.badge.person").font(.callout.weight(.medium)) }
+            }
+        }
     }
+
     private var dictionaryRow: some View {
         HStack {
             TextField("Как распознано", text: $heard).labelsHidden().textFieldStyle(.roundedBorder)

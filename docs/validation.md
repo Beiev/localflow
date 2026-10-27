@@ -1,5 +1,174 @@
 # Актуальная проверка — 8 сентября 2026
 
+## 26 октября 2026 — 0.6.0: читаемость конспекта
+
+`swift test`: **282 теста ядра**, интерфейсная схема — **16**, без ошибок.
+
+### Что изменилось в документе
+
+Один и тот же 45-минутный созвон, один и тот же подготовленный материал, Gemma 4 E2B, температура 0. «В архиве» — документ, который лежит с сентября; «одним проходом» — вся расшифровка в одном запросе (порог нарезки 48 000 знаков, материал 37 601, то есть нарезки не было); «конвейер» — пять ступеней.
+
+| | в архиве | одним проходом | конвейер 0.6.0 |
+|---|---:|---:|---:|
+| знаков | 2389 | 2498 | 3049 |
+| чистота разделов | 0,80 | 0,82 | **0,93** |
+| повторы | 0,04 | 0,00 | **0,00** |
+| ссылки разрешаются | 25 из 25 | 22 из 22 | 28 из 28 |
+| цифры с опорой в разговоре | 14 из 25 | 16 из 18 | **20 из 20** |
+| покрытие цифр разговора | 13 из 37 | 12 из 37 | **14 из 37** |
+| задачи | 8 | 7 | 7 |
+| из них без живого исполнителя | 8 | 0 | **0** |
+| конкретное вступление | нет | нет | **да** |
+| вызовов модели | — | 1 (39,5 с) | 14 (~100 с) |
+
+Шесть тем вместо трёх несвязных: «Удержание клиентов», «Продажи и заказы», «Контент и материалы», «Разработка и поиск», «Хостинг и домен», «Разное». До этой работы те же записи лежали под одним заголовком «Проблемы удержание» вместе со структурой сайта, постами в телеграме и расходами на API — потому что группировка шла по соседству во времени.
+
+Задач стало 7 вместо 9: две формулировки одного и того же из одной реплики схлопнулись, а строка «никто не хочет покупать…» ушла из задач в факты.
+
+### Чего эти числа не значат — и почему это главное ограничение
+
+**Читаемость ими не меряется.** Прокси-метрики ловят выдуманную цифру, нерабочую ссылку, повтор и безличного исполнителя. Понятна ли сквозная мысль, легко ли документ читается, доходит ли суть — не ловит ни одна из них, и это ровно то, ради чего делалась эта версия. Единственная проверка здесь — чтение, и судит его владелец.
+
+Чистота разделов считается тем же правилом, которым раздел и выбирается: это остаток, а не независимое мнение.
+
+Абзац сквозной нити пишет модель. Проверено, что он не выдумывает цифр (каждая встречается в сказанном), не пишет отметок времени, не превращается в список и укладывается в 150–900 знаков. Не проверено ничем, что он **верно** передаёт смысл разговора: это оценка, которую может дать только человек, читавший тот же разговор.
+
+Группировка тем зависит от того, выполнит ли 2B-модель инструкцию. Пример отказа задокументирован: на запрос «тема | номера» модель шесть раз ответила «Название | 1, 5», скопировав шаблон, и все заголовки документа читались «Название». После добавления примера в инструкцию и запрета на слова самой инструкции группировка заработала; гарантии, что она сработает на любом разговоре, нет — при отказе документ возвращается к плоским разделам.
+
+## 26 октября 2026 — 0.5.0: архив наружу, замеченный созвон, имена из календаря
+
+`swift test`: **251 тест ядра**, интерфейсная схема — **16**, без ошибок. Новых 25: разбор запросов MCP и четыре инструмента, ранжирование моментов, политика замеченного созвона, разбор участников встречи.
+
+### MCP-сервер
+
+Проверен на настоящем архиве (264 записи), пока приложение работало с той же базой: рукопожатие, `tools/list`, `list_recordings`, `find_moments`, `read_recording` во всех частях и обращение к несуществующей записи. База открывается только на чтение, и параллельная работа приложения ничему не мешает.
+
+Что проверено тестами, а не руками: уведомление без идентификатора остаётся без ответа, сломанный JSON даёт -32700, неизвестный метод -32601, несуществующая запись приходит как ошибка инструмента (а не протокола), документ длиннее 24 000 знаков обрезается с прямой пометкой, и среди инструментов нет ни одного, чьё имя содержит `delete`, `save`, `remove`, `update`, `write` или `transform`.
+
+Чего проверка не покрывает: сервер не запускался настоящим клиентом MCP в составе Claude Code — только построчным обменом через конвейер. Ответы по существу (найдёт ли ассистент то, что нужно, и процитирует ли верно) не измерялись.
+
+### Замеченный созвон — убран в тот же день
+
+Функция была собрана и покрыта тестами, но не прошла проверку владельцем: он часто наговаривает длинные тексты, а созвон отмечает сам заранее или шорткатом. Удержание микрофона дольше полуминуты у него означает диктовку, а не разговор. Сигнал подобран неверно в основе, поэтому функция удалена целиком, а не настроена порогами.
+
+### Имена из календаря
+
+Разбор участников проверен тестами: отображаемое имя важнее адреса (иначе один человек приходит дважды), адрес становится именем только когда читается как имя, служебные ящики отбрасываются, себя в предложениях нет. Чтение календаря живьём не запускалось: разрешение запрашивается по нажатию, и первый запрос — за владельцем.
+
+### Вес редактора: Qwen 3.5 9B 4-bit проверен и отклонён
+
+Это был пункт «сначала конвейер, потом вес». Конвейер готов, стенд `summary-ab` существует, поэтому кандидат из октябрьского разбора прогнан на тех же двух созвонах: `mlx-community/Qwen3.5-9B-4bit`, 5,98 ГБ, ревизия закреплена, скачан за 3 минуты 17 секунд.
+
+| 45-минутный созвон | Gemma 4 E2B | Qwen 3.5 9B |
+|---|---:|---:|
+| структурный путь, знаков | **2803** | **0** |
+| структурный путь, время | 77,8 с | 1535,6 с (25,6 мин) |
+| однопроходный путь, знаков | 2498 | 9814 |
+| однопроходный путь, сжатие | 0,066 | 0,261 |
+| цифры с опорой в разговоре | 16 из 18 | 67 из 218 |
+| разделов и отметок времени | есть | нет |
+
+На 12-минутном созвоне то же самое: структурный путь — пустой документ за 478,8 секунды, однопроходный — 9866 знаков при сжатии 0,972, то есть «конспект» длиной почти в сам разговор.
+
+Причина видна в ответе модели: он начинается словами «Thinking Process:» и дальше идёт рассуждение по-английски. Эта сборка выдаёт ход мысли вместо ответа. Извлечение ждёт строк вида `ФАКТ | … | u12`, таких строк в ответе нет ни одной, поэтому из двенадцати окон не уцелело ни одной записи и документ вышел пустой — отработав двадцать пять минут.
+
+Это не вывод «модель хуже». Это вывод, что промпты написаны под модель, которая отвечает, а не рассуждает вслух, и что цена выяснения — двадцать пять минут на один созвон. Чтобы больший вес вообще можно было оценивать, нужны три вещи сразу: сборка без видимых рассуждений, ограниченное декодирование формата (`MLXGuidedGeneration`, он есть с mlx-swift-lm 3.32.3 — вот тут поднятие пина наконец имело бы смысл) и скорость, которой на 18 ГБ M3 Pro нет.
+
+**Решение: остаёмся на Gemma 4 E2B.** Вес убран из каталога приложения, чтобы его нельзя было выбрать в настройках и получить пустой конспект; строка для повторного замера оставлена закомментированной в `Scripts/pin-models.py`. Скачанные веса лежат в `~/Library/Application Support/LocalFlow/models/qwen3.5-9b` (5,6 ГБ) — удалять их или нет, решает владелец.
+## 26 октября 2026 — 0.4.1: разбор по темам и ревью второй моделью
+
+Машина: Apple M3 Pro, 18 ГБ, macOS 26. Редактор: Gemma 4 E2B 4-bit, температура 0. Оба созвона прогоняются на одном и том же подготовленном материале: мелкие голоса сведены, предложенные имена применены — то есть на том состоянии, до которого доводит интерфейс.
+
+`swift test`: **226 тестов ядра**, интерфейсная схема — **16**, без ошибок. Из них 26 новых: четвёртая ступень (группировка, слияние мелких групп, ограничение числа тем, разбор ответа модели, запасной заголовок по времени, абзац темы, документ с темами и без них), чтение метрикой документа из тем, письмо после созвона и тринадцать случаев из ревью.
+
+### Что изменилось в числах
+
+Созвон 45 минут (сессия 98AD9438, 37 601 знак материала, 172 реплики, имена участников применены). «В архиве» — документ, который лежит в архиве с сентября; «старый проход» — одностадийное сжатие на том же материале; «новый конвейер» — четыре ступени с темами.
+
+| | в архиве | старый проход | новый конвейер |
+|---|---:|---:|---:|
+| знаков | 2389 | 2498 | **2803** |
+| утверждений | 25 | 22 | 31 |
+| чистота разделов | 0,80 | 0,82 | **0,94** |
+| повторы | 0,04 | 0,00 | **0,00** |
+| ссылки разрешаются | 25 из 25 | 22 из 22 | 31 из 31 |
+| цифры с опорой в разговоре | 14 из 25 | 16 из 18 | **22 из 22** |
+| покрытие цифр разговора | 13 из 37 | 12 из 37 | **14 из 37** |
+| задачи | 8 | 7 | 9 |
+| из них без живого исполнителя | 8 | 0 | **0** |
+| конкретное вступление | нет | нет | **да** |
+| вызовов модели | — | 1 (39,5 с) | 13 (77,8 с) |
+
+Пять тем, из них четыре названы моделью в два-три слова, пятая осталась под заголовком времени. Названия не приводятся: это рабочий разговор владельца, а репозиторий публичный.
+
+Созвон 12 минут (сессия 02012CCE, имён участников нет — диаризатор дал только метки):
+
+| | в архиве | старый проход | новый конвейер |
+|---|---:|---:|---:|
+| знаков | 1886 | 1176 | 1591 |
+| утверждений | 18 | 4 | 13 |
+| чистота разделов | 0,50 | 0,50 | **1,00** |
+| ссылки разрешаются | 15 из 21 | 7 из 7 | 15 из 15 |
+| цифры с опорой | 7 из 13 | 4 из 4 | 10 из 10 |
+| покрытие цифр разговора | **5 из 6** | 4 из 6 | 3 из 6 |
+| задачи | 6 | 1 | 4 |
+| вызовов модели | — | 1 (11,5 с) | 5 (20,3 с) |
+
+На коротком созвоне новый конвейер **теряет покрытие**: 3 цифры разговора из 6 против 5 из 6 у документа в архиве. Пороги длины утверждения (25 знаков, 4 слова) и ограничения по окну рассчитаны на длинный разговор, и на двенадцати минутах они отсекают то, что на сорока пяти было бы шумом. Это известная цена, а не случайность. На том же созвоне одна задача содержит в тексте метку «Участник N»: имён у этого созвона нет, модель видит метки в материале и переносит их в формулировку. В колонке исполнителя метки нет — её отбрасывает проверка.
+
+Цена: один вызов модели против тринадцати на сорокапятиминутном созвоне, 39,5 с против 77,8 с. Тринадцать — это двенадцать окон разговора и одно именование тем.
+
+### Что эти числа не значат
+
+Чистота разделов на структурном пути **круговая и стала круговой сильнее**: раздел выбирается кодом по тому же признаку, которым метрика проверяет его чистоту, а с 0.4.1 к этому добавлена и проверка на действие — «тариф стоит двадцать долларов» больше не считается ни задачей, ни ошибкой размещения ни тем, ни другим. Это остаток, а не независимое мнение. Валидность ссылок тоже круговая: модель не видит часов и физически не может написать отметку. Вес сравнения держится на верности цифр, покрытии цифр разговора, повторах, ясности исполнителя, длине и конкретности вступления.
+
+Связность абзаца темы не измеряется ничем. Проверено только то, что предложения темы относятся к одному куску разговора и что каждое несёт свою отметку; читается ли абзац как текст — вопрос чтения, и ответ на него пока только мой.
+
+Имена тем даёт модель. На длинном созвоне из пяти групп четыре получили название, одна осталась под заголовком времени. Ни одно название не проверялось на соответствие содержанию группы: проверяется только форма — длина, буквы, отсутствие ссылок на реплики.
+
+Письмо после созвона собрано из уже готового документа и ничего нового не утверждает. Оно не проверялось на реальной отправке.
+
+Чтение экрана по-прежнему **ни разу не запускалось живьём**: ни замеров диска, нагрузки и задержки, ни подтверждения, что русский текст с экрана распознаётся пригодно. Исправления по экрану из ревью проверены тестами и чтением кода, а не работающим захватом.
+
+### Ревью второй моделью
+
+Кросс-модельное ревью 0.4.0 (Codex, затем независимая проверка каждого вывода по файлам) дало десять находок, из которых восемь подтвердились, и ещё пять нашёл проверяющий. Тринадцать исправлены, каждое со своим тестом; список — в [CHANGELOG](../CHANGELOG.md). Две находки оставлены как решения, а не дефекты: захват экрана снимает весь дисплей без окон самого LocalFlow (сузить до одного окна можно только вторым потоком — не решено), и запись в документ не проверяется на то, что её цифры есть в цитируемых репликах (верность цифр измеряется постфактум и на этих двух созвонах равна 1,00).
+
+## 16 сентября 2026 — 0.3.3: защита редактуры и совместимость архива
+
+Машина: Apple M3 Pro, 18 ГБ, macOS 26.2; Xcode 26.6 (17F113). Модели распознавания и редактора в этом изменении не заменялись.
+
+- `Scripts/test.sh`: **78 тестов**, 77 основных и 1 интерфейсный, без ошибок. Добавлены проверки английских отрицаний и сокращений, переноса отрицаний между действиями, допустимой перестройки отрицательных фраз, неоднозначных разделителей чисел, причин отката и чтения старых версий JSON.
+- Архив: проверены переход 1 → 2, свежая база через обе миграции, сохранение текста и поиска, резервная копия с данными из WAL, откат при сбое, отказ для схемы 999 без изменения файла, режим чтения без миграции, стабильные страницы при одинаковом времени записей, обновление метрик без потери переименования и без восстановления удалённой записи.
+- Недоступное аудио: пустой журнал не стирает сохранённую расшифровку и не вызывает распознаватель.
+- Повторная проверка архива выявила три ложных срабатывания первой версии правила переноса отрицания. Они были связаны с перестройкой грамматики, а не переносом запрета между действиями. Правило уточнено до двустороннего переноса между сохранёнными словами; грамматические случаи добавлены в синтетические тесты.
+- Диктовка внутри созвона теперь использует тот же безопасный выбор текста, что и обычная диктовка. Этот путь собран; живой сценарий «созвон + диктовка + отмена» требует отдельной аппаратной проверки.
+- GitHub Actions настроен на `macos-26`, Xcode 26.6, тесты и Release-компиляцию приложения/бенчмарка. Запуск на GitHub ещё не выполнялся; локальная проверка не подтверждает работу hosted runner.
+- Проверка исходников: обращения `URLSession`/`https://` по-прежнему находятся только в `ModelCatalog.swift`. Новые отчёты не содержат текст, пути к аудио или идентификаторы записей. Это проверка исходников, не сетевой аудит всех зависимостей.
+
+### Реальный прогон и установка
+
+Release-приложение и `LocalFlowBench` собраны; локальная подпись проверена. **Установлена 0.3.3 (build 12)** в `~/Applications/LocalFlow.app`. До установки приложение было свободно, модели выгружены; завершение сделано штатно. После запуска интерфейс показывает все **114 записей**, ⌘B работает, Universal Access подтверждён. В диагностике появились отдельные строки для прогретых/загружаемых моделей; измеренных новых диктовок пока нет.
+
+Архив на этой машине перешёл с версии 1 на 2 и создал одну резервную копию. SHA-256 сериализованных строк каждой таблицы до/после совпал для `sessions`, `search`, `dictionary`, `voices`. Проверка выполнена без публикации содержимого. Микрофон, системный звук и фактическая вставка после обновления в этом прогоне не запускались.
+
+Повторный аудит: 100 диктовок, 84 сохранённых предложения редактуры, 8 отмечены текущими правилами (7 — числа, 1 — количество отрицаний). Исторических версий с меткой минимальной очистки — 7. Аудит использует текущий словарь и последнее предложение; это разные показатели, и считать их изменением качества нельзя. В частности, уменьшение ложных срабатываний на трёх просмотренных грамматических случаях не подтверждает снижение общей доли откатов на новой речи.
+
+Аудиоповтор: одна реальная запись, **28,587625 с**, режим clean, пустой словарь, штатный редактор Gemma (`editor`), последовательные прогоны. Содержание не опубликовано. ASR включает чтение/сборку аудио и контрольные сохранения.
+
+| Условия | ASR, с | Редактор, с | Всего, с |
+|---|---:|---:|---:|
+| Первый процесс, модели не загружены | 18,839 | 3,854 | 22,693 |
+| Тот же процесс, модели в памяти | 0,337 | 1,168 | 1,505 |
+| Тот же процесс, модели в памяти | 0,289 | 1,195 | 1,483 |
+| Новый процесс, модели не загружены | 0,544 | 4,450 | 4,995 |
+
+Во всех четырёх прогонах guard пропустил результат. Ручного эталона расшифровки нет: WER и фактическая верность результата не оценены. Разница холодных запусков согласуется с влиянием первоначальной подготовки/кэшей, но конкретная причина не доказана. Это **не задержка от остановки до вставки**: захват, живое распознавание и вставка в данный benchmark не входят. Два прогретых замера и два холодных не устанавливают p95 для реальной повседневной работы.
+
+Численные отчёты: `docs/benchmarks/dictation-latency-2026-09-16.json` и `docs/benchmarks/dictation-cold-repeat-2026-09-16.json`. Отчёты не содержат речь, идентификатор записи или путь к исходнику.
+
+Полная задержка до вставки ранее не сохранялась: исторический p50/p95 восстановить нельзя. Новая версия записывает локальные замеры для обычной диктовки; раздел «Диагностика» и `LocalFlowBench diagnostics` показывают готовые/загружаемые модели отдельно, только для измеренных записей. Распознавание и качество вставки в сторонних приложениях не выводятся из числа прошедших тестов.
+
 ## Второй реальный созвон, 10 сентября — и почему правки 9 сентября до него не доехали
 
 Владелец записал второй созвон: сессия 9FCFB4CF, 34 минуты 49 секунд, трое участников (владелец
@@ -252,3 +421,486 @@ Qwen: короткая диктовка с повторами, бюджетом 
 После переноса `mdfind` возвращает только установленную копию, в реестре Launch Services остаётся одна запись LocalFlow; в интерфейсе Raycast также найдено одно приложение. Синтаксис скриптов и отказ установки поверх запущенного процесса проверены.
 
 Повторная Release-сборка в новом каталоге завершилась успешно; после неё системный поиск по-прежнему возвращает одно приложение.
+
+
+## 2026-09-18 — Capture recovery and compact notch panel (0.3.4 / 13)
+
+- Incident inspection: five consecutive failed dictations had empty `parts.json` journals and no CAF files. CoreAudio logs showed the old AVAudioEngine initializing a Bluetooth route and subsequently rebinding its audio unit to the USB microphone. No PCM reached storage; ASR had no input. The route/graph interaction is the likely trigger; the absent first-buffer health check is confirmed.
+- Replaced only microphone acquisition with an explicitly selected AVCaptureSession audio input. ScreenCaptureKit, file format, transcript processing and text insertion remain on their existing paths. Startup readiness now requires converted PCM, and a 2.5-second delivery watchdog allows two reconnect attempts, using built-in input on the second attempt. Silence/paused capture still advances delivery health. Runtime errors use the same bounded recovery path.
+- Capture lifecycle and file state are serialized; callbacks carry recording IDs. Startup can be stopped or cancelled. Failed capture preserves its diagnostic alongside recoverable audio rather than silently presenting an empty result.
+- Validation: `Scripts/test.sh` passed 80 core + 2 interface tests. New checks cover missing initial buffers, bounded retries, silence/pause delivery, readiness after recovery, and physical-top positioning without focus stealing. `Scripts/build.sh` produced the signed Release build; installed at `~/Applications/LocalFlow.app` with the existing local signing identity.
+- Hardware smoke checks used an isolated temporary archive and existing models on the same Mac with AirPods as system input/output and Shure MV7+ selected for capture. Two recordings produced nonempty audio, live transcripts and ready edited results without capture errors. The second used an explicitly generated Russian test phrase played through built-in speakers; first PCM arrived about 0.20 seconds after starting the Shure session. The application reported insertion dispatch success, but insertion into the automation-controlled TextEdit window was not observed; do not treat that as independently verified insertion. Physical left-Command shortcuts and Esc could not be exercised by app-targeted automation (it bypasses the global event tap); the unchanged shortcut matcher has unit coverage.
+- Visual inspection and owner feedback: reduced panel to 380 pt wide and 148 pt body height, transparent shoulders around the notch, 2 pt neck/body overlap, slower damped reveal. A borderless NSPanel subclass bypasses AppKit menu-bar frame clamping, which caused the visible gap and redundant top padding.
+- Remaining validation limits: no physical microphone unplug/replug, long meeting capture or sleep/wake endurance run in this session. Recovery policy is unit-tested; these hardware scenarios are not claimed as tested. Existing failed recordings with no audio cannot be reconstructed.
+
+
+## 2026-09-18 — Interruptible notch animation (0.3.5 / 14)
+
+- Confirmed the reported out/in/out sequence in code: the no-speech result called `showReceipt`, reopening the dismissed panel for eight seconds. Removed automatic presentation from all processing outcomes (including errors and failed insertion). Those outcomes remain in the main window/menu/archive. Only explicit recording/show commands can open the panel.
+- Replaced the changing SwiftUI frame and rectangular clipping with a fixed native surface. Matching Core Animation paths animate the black contour and the content mask; transcript layout stays fixed. Six curved path sections keep rounded edges throughout the reveal, with Retina mask scaling. An analytical critically damped curve carries position and velocity through reversals; show/hide commands are idempotent and closing completions are revision-checked.
+- Rapid startup toggles update the requested final visibility. Digital silence and less than 100 ms of samples return before loading the recognizer. Audio-meter UI publication is bounded to 30 Hz.
+- `Scripts/test.sh`: 81 core + 7 interface tests passed. The interface suite was repeated after final rendering changes and passed. Regressions cover no model load for silence/short taps, continuous position/velocity across four quick reversals, stable curved path topology at eight intermediate sizes, duplicate close commands, and obsolete closing completions. The native-window test also checks the compositor presentation path after 80 ms: its bounds are between the closed and open sizes, verifying actual intermediate rendering rather than only the math.
+- Reviewed an offscreen contour contact sheet at 2/6/12/25/40/65/85/100 percent reveal. Installed-build smoke check used a temporary archive: microphone capture, live transcription, completion and dismissal worked, and processing did not reopen the panel. The physical global shortcut sequence still needs owner testing; app-targeted automation bypasses the global event tap. No claim of measured frame-rate performance is made.
+
+## 2026-09-18 — Reduce work during the entrance (0.3.6 / 15)
+
+- Owner feedback confirmed smooth dismissal but stuttering entrance. Code inspection found cold hosting/TextKit creation on first show, recognizer startup and full archive refresh overlapping the reveal, and waveform publication on the shared AppModel invalidating unrelated interface observers up to 30 times per second. These are identified sources of contention, not a measured allocation of dropped frames between them.
+- Prepare the hidden panel after application initialization; finish content layout/display before starting its animation clock; explicitly flush the animation transaction before audio startup. Opacity now animates an AppKit-owned container rather than NSHostingView's own layer. The existing motion curve and geometry are unchanged.
+- Audio capture and buffering start immediately. Recognition, the startup archive refresh and meter/clock publication wait for the opening to finish (0.72 s normally, 0.12 s with Reduce Motion). Waiting is cancellation-aware and follows a later opening after reversal. Waveform ticks now publish through a separate observable object, so they update only waveform views.
+- `Scripts/test.sh` passed 81 core + 10 interface tests. The 10 interface tests passed again after the final behavior change. Added checks cover hidden preparation without presentation/rebuilding, deferred work across reopening/cancellation, and intermediate compositor path bounds after an 80 ms synchronous main-thread stall immediately after show. This does not measure physical display frame pacing or prove a specific FPS.
+- Signed Release build installed as 0.3.6 / 15. Two microphone recordings in a separate temporary archive reached `ready`, retained audio and live/final text, and had no recording errors. A synthetic Russian phrase was recognized in the first recording. The first saved PCM started at 0.803 s on the cold attempt and 0.147 s on the next attempt, relative to capture's epoch; the latter is before the 0.72 s entrance completes. Capture logs confirmed PCM 185/144 ms after selecting/starting the Shure input. No artificial microphone-start delay was added. Restored the normal application/archive after testing. Physical shortcut and on-screen smoothness still require owner assessment; the native transition lifecycle has automated coverage.
+
+## 2026-09-18 — Entrance clock and microphone sequencing (0.3.7 / 16)
+
+- Owner feedback established that 0.3.6 still stuttered on entrance. Profiled the installed build against an isolated snapshot of the real archive. The first trace was contaminated by accessibility-tree inspection; its largest stall is not attributed to normal usage. A second trace avoided accessibility reads during opening. Samples inside `NotchSurface.setExpanded` spanned roughly 187 ms, including SwiftUI layout of other windows through `NSDisplayCycleFlush` / Core Animation commit handlers, after the animation's explicit start time had already been set. Sampling a presentation path with a lightweight text-only test did not catch this startup cost.
+- Flush pending layout/commit work before creating the timed animation. A new regression introduces 240 ms of pending layout in another native window. Without the fix it fails: 80 ms after show returns, the contour is already 172.6 pt tall. With the fix it stays below 125 pt at that point; preparation takes 250.6 ms before the clock, and the timed commit takes 1.5 ms. The regression was run against both versions, restoring the fix automatically afterward.
+- Disable automatic AppKit `orderFront`/`orderOut` animations and request the display's maximum frame rate for Core Animation (a 120 Hz array of samples alone does not request 120 Hz presentation). This is a refresh-rate preference, not a claim of measured constant 120 FPS.
+- Microphone initialization now waits for the entrance, including its preparation. The panel says to speak after “Слушаю…”. A second press during the entrance returns to idle without saving an empty session or starting audio/ASR; Escape cancels the wait. Recording duration excludes this initial wait. The existing close motion, geometry and insertion code are unchanged.
+- Validation: 81 core tests passed, then all 12 interface tests passed after the final change (93 total). New coverage includes denying recording startup after an entrance is dismissed. Signed Release installed as 0.3.7 / 16. In the installed build, two openings logged 41.5/61.6 ms of preparation before the animation clock and 0.318/0.417 ms for the timed commit; microphone requests followed about 0.77 s later. Audio, live transcription and final processing reached `ready` without errors. The UI automation round-trip was too slow to dismiss within 0.72 s; that attempt instead verified a short 0.31 s recording. Sub-entrance dismissal is covered by the native regression, not claimed as a physical shortcut test. The normal archive is restored after isolated validation. Subjective smoothness on the physical display still needs owner feedback.
+
+## 2026-09-21 — Recording panel while the archive is hidden (0.3.8 / 17)
+
+- Reproduced a native visibility failure against the previous controller: hiding the application also hides its recording panel (`canHide` defaults to true), while the logical visibility flag stays true. Another show request then returns without restoring the window. A separate regression reproduced the same stale-state problem after an external `orderOut`.
+- The independent, nonactivating panel now opts out of application hiding and can join other applications' window sets. Every show request restores the native window and checks its current screen frame; a healthy visible panel keeps its current animation. The opening waiter requires actual native visibility before authorizing microphone startup. Removed the redundant “Показать окно” control; the existing shortcut opens recording and the next press closes it.
+- All 16 interface tests passed, including four added checks: hidden-app presentation across repeated openings without unhiding the archive or taking keyboard focus, hiding an already recording app, externally ordered-out window recovery, and drawing-layer attachment across repeated presentations. The two visibility regressions failed against the old controller. Existing interruption, rounded-path and entrance timing checks remain green. Core capture/inference code was unchanged in this revision; its 81 tests last passed for 0.3.7 (97 tests now in the repository).
+- Signed Release 0.3.8 / 17 built successfully. Physical shortcut delivery, full-screen app switching and sleep/wake are not established by these native-window tests. Presentation diagnostics now log only window visibility, Space membership, application-hidden state and frame, without speech content.
+
+## 2026-10-25 — Reading the record, and names for the voices (0.3.9 / 18)
+
+Owner's framing: a summary without the transcript beside it is "the agent's idea of the call", and
+the existing summaries are "crooked, a three out of five on presentation". Both complaints were
+reproduced before anything was changed.
+
+- **Presentation was literal markup.** The interface showed condensed documents with
+  `Text(String)`, which prints Markdown rather than interpreting it. All eleven summaries in the
+  archive are written with `**Заголовок**` sections and `*   ` bullets, so all eleven were being
+  read with their asterisks. `RichText` now parses blocks (headings, bullets, quotes, tables,
+  dividers) and the view hands inline runs to `AttributedString`. A standalone fully-bold line is
+  treated as a heading, which is what makes the eleven documents already in the archive render.
+- **Citations were dead text.** `[мм:сс]` was clickable only in the raw turn list, never in the
+  summary that cites it. They are now rewritten as Markdown links on a private scheme and
+  intercepted, so a claim opens the audio that supports it. Minutes are not capped at 59: an
+  88-minute call writes `[87:36]`, and the earlier assumption would have dropped those.
+- **The transcript had nowhere to be read.** `SessionView` auto-selected the newest version on
+  every open and offered the original only through an unlabelled picker, so after condensing there
+  was no obvious way back to the speech. Replaced with three tabs: summary, cleaned transcript,
+  raw recognition, each copyable on its own.
+- **Cleaned transcript, measured on real calls with the real editor.** New `transcript` mode and a
+  `LocalFlowBench transcript` mode that runs it over an archive entry without writing back.
+  12-minute call: 46 turns, 10 154 characters, 5 windows of 2 500 characters, **79.6 s** on
+  Gemma 4 E2B, process footprint 2 854 MB. Every turn survived, the turn guard did not fire, and
+  24 of 46 lines changed — capitalization after sentence ends, dash and comma repair, fillers
+  removed — while numbers and negations passed the existing guards unchanged.
+  45-minute call: 172 turns, 37 649 characters, 17 windows, **314.2 s** (5 min 14 s), footprint
+  2 771 MB. All 172 turns survived; output 37 615 characters. Here the guard did fire: at least one
+  window came back with a different negation count and was delivered as recognized instead of
+  accepted, which is the intended trade — a stretch loses its polish rather than quietly losing a
+  "не". So the cost of this mode is roughly seven seconds of local compute per minute of call, in
+  the background, on demand.
+- **Identity folding, measured across every meeting in the archive.** The 45-minute two-person call
+  came back as three remote identities holding 97 %, 1 % and 0 % of the remote speech; the 1 % and
+  0 % pieces were the same voice, and their embeddings sat at cos 0,17 and 0,01 from the dominant
+  one, so no similarity threshold could have merged them — the fragments are too short to make a
+  comparable embedding. Folding identities under both 5 % of remote speech and 60 s of it, into the
+  surviving voice nearest in time, changed 8 of 11 meetings: 3→1, 3→1, 2→1, 3→2, 3→2, 4→3, 4→3,
+  9→8. The 9→8 case kept a genuinely quiet participant of a 92-minute nine-person call (3 % share
+  but 122 s of speech), which is why both floors are required. Two meetings were left alone where
+  a small identity held ≥ 5 % (10 % and 5,5 %); the rule is deliberately conservative there.
+  `LocalFlowBench identities` reports this from stored turns, and the same fold is offered as an
+  action for recordings whose audio has already been pruned.
+- **Names from the conversation, measured the same way.** A name used as a vocative is aimed at
+  somebody else, so in a two-sided call each side names the other. `LocalFlowBench names` over the
+  archive proposed, after folding: the correct two names on the 45-minute call (4 mentions / 3
+  mentions), the correct two on a 54-minute call, one name on a 13-minute call from a single
+  uncontested mention, and nothing on the remaining eight. No third party was ever proposed as a
+  participant, including two clients discussed by name on the 45-minute call — they are named by
+  one side only and lose on count. First attempt had `.caseInsensitive` on a pattern asserting an
+  initial capital, which made every word after a comma a candidate; second attempt counted
+  unattributable turns as a third voice and so proposed nothing at all on two-person calls. Both
+  are now regressions.
+- **Archive search re-queried SQLite on every redraw.** `filteredSessions` ran
+  `store.search(...)` inside a computed property, so a waveform tick during recording re-ran
+  full-text search. Now debounced by 220 ms into state.
+- **Validation:** `Scripts/test.sh` — 116 core + 16 interface tests pass (81 + 16 before this
+  work). New coverage: block parsing of the archive's actual summary shape, tables with ragged
+  rows, prose that only looks like a table, time references beyond an hour and malformed ones such
+  as `[134]`, line-preserving chunking, the turn guard against summarized / reordered / renamed /
+  empty replies, identity folding including the quiet-participant and all-minor cases, and the
+  naming rules including the two failures above.
+- **Not verified in this session, and not claimed:** the interface was not seen running. Screen
+  access was declined, so every interface change above is verified by compilation, unit tests and
+  code reading only — not by eye. The signed Release build was produced but **not installed**: the
+  owner's LocalFlow was running and installing requires quitting it. The installed build is still
+  the one from 18 September, which also means the committed-but-undelivered work from 0.3.4–0.3.8
+  has not reached the live machine either. A cleaned transcript was not produced through the
+  application's own interface, only through the bench harness on the same code path. Which windows
+  the negation guard rejected on the 45-minute call was not inspected turn by turn; only that it
+  fired and that no turn went missing.
+
+## 2026-10-25 — Condensing as three stages, with the measurement that drove it
+
+The owner called the summaries "crooked, a three out of five". Before changing anything, the
+complaint was turned into counters and every document already in the archive was scored
+(`SummaryQuality`, `LocalFlowBench summary-quality`). The baseline over twelve stored summaries:
+compression mean 0.420 / median 0.156, section purity mean 0.80, redundancy mean 7.42 (median 0),
+citation validity 0.98, number fidelity 0.84, owner clarity 0.75, and **one specific opening out
+of twelve** — and that one belongs to a 25-second junk recording. Eleven of eleven real openings
+were generic enough to head any meeting ever held.
+
+Two defects in the measuring instrument were found and fixed before it was trusted. Figures were
+first counted over the whole transcript, so the clock in `[04:41]` and the digit in `Участник 1`
+counted as figures the conversation contained, and a summary that said "Участник 1" was credited
+with one; counting over the speech only moved the archive's number fidelity from 0.94 to 0.84, so
+the earlier figure was simply wrong. And an opening passed the specificity check on the word
+"решено" alone — "было решено сделать что-то нормальное" scored as specific — so the check now
+requires a figure or the name of somebody present.
+
+**What the new path does.** Turns get stable identifiers; the model is shown identifiers and
+speaker names and never a clock, so it cannot write a timestamp or emit raw seconds. It reads
+~3 000 characters of conversation at a time and returns pipe-delimited typed lines — fact,
+decision, task, question — citing the turns each came from. A line format was chosen over JSON on
+purpose: a malformed line is dropped on its own while a malformed JSON document fails whole, and
+the pinned mlx-swift-lm 3.31.4 has no constrained decoding. Everything after extraction is code: a
+record citing a turn outside the window it was shown is dropped as invented, a fact or decision
+opening with an intention marker becomes a task, an owner is accepted only if it matches a speaker
+the recording knows, paraphrases within a kind are merged by stemmed token overlap, each window
+contributes at most five records and each section keeps at most 12–15, and the document is
+assembled with the clock attached from the earliest cited turn. The opening is written last from
+the records that survived and refused twice if it fails the specificity check, then built
+deterministically.
+
+**The first attempt was worse to read, and the metrics said it was better.** Without the per-window
+cap, the 12-minute call produced 59 bullets and 4 173 characters — 41 % of the conversation, an
+indexed transcript rather than a summary — with purity 1.00 and no duplicates. The facts section
+filled with fragments like "скинуть что-то" and "туда погнали". Capping records per window and per
+section, requiring 25 characters and four words per assertion, and ranking what survives brought
+the same call to 1 696 characters and 15 bullets. This is why the document itself is read and not
+only its score.
+
+**Two metrics are now circular and are reported as such.** Filing is deterministic in code against
+the same marker list the purity metric checks, so the structured path reads purity 1.00 by
+construction and that number carries no information about it. Citation validity is near-circular
+for the same reason: the model never writes a clock reading. Both still measure the legacy strategy
+and the archived documents, where the model chose the section and wrote the timestamps — that is
+how `[134]` was caught. The comparison's weight therefore sits on redundancy, number fidelity and
+coverage, owner clarity, length, and the opening.
+
+**Measured, both strategies run back to back over the same prepared material** — small voice
+identities folded and proposed names applied, which is the state the interface reaches once the
+owner accepts what the recording offers. `LocalFlowBench summary-ab`, Gemma 4 E2B, temperature 0,
+26 October, final code.
+
+45-minute two-person call (172 turns, 37 601 characters; both participants' names were available):
+
+| | in the archive | legacy, re-run | structured |
+|---|---:|---:|---:|
+| characters | 2 389 | 2 498 | 2 710 |
+| bullets | 25 | 22 | 31 |
+| figures grounded in the speech | 14/25 | 16/18 | **31/32** |
+| figures of the conversation carried | 13/37 | 12/37 | **17/37** |
+| citations that open the audio | 25/25 | 22/22 | 31/31 |
+| paraphrased repeats | 0.04 | 0 | 0 |
+| tasks | 8 | 7 | 9 |
+| tasks owned by a diarizer label | **8** | 0 | 0 |
+| opening says something only this call could | no | no | **yes** |
+| model calls / seconds | — | 1 / 64.2 | 12 / 119.7 |
+
+12-minute call (46 turns, 10 154 characters; **no names were available**, so this isolates the
+architecture from the naming work):
+
+| | in the archive | legacy, re-run | structured |
+|---|---:|---:|---:|
+| characters | 1 886 | 1 176 | 1 572 |
+| bullets | 18 | 4 | 13 |
+| section purity | 0.50 | 0.50 | 1.00 (enforced) |
+| citations that open the audio | 15/21 | 7/7 | 13/13 |
+| figures grounded in the speech | 7/13 | 4/4 | 12/13 |
+| figures of the conversation carried | 5/6 | 4/6 | 3/6 |
+| opening says something only this call could | no | no | **yes** |
+| model calls / seconds | — | 1 / 17.5 | 4 / 28.2 |
+
+**What this establishes, and what it does not.** Section purity and citation validity are enforced
+by construction on the structured path and carry no information there. The findings that do carry
+weight on the long call: figures grounded 14/25 → 31/32, figures of the conversation carried
+13/37 → 17/37, repeats gone, every task owned by a person or by nobody rather than by a label, and
+an opening that is about this call. Cost: twelve model calls instead of one and roughly twice the
+wall time, in the background.
+
+Two results go the other way and are not hidden. On the short call the structured document carries
+**fewer** of the conversation's figures than the archived one (3 of 6 against 5 of 6): the
+per-window and per-section caps that stopped the 41 % indexed-transcript also drop figures from a
+conversation that only had six. And one task there still counts as owned by a label, because the
+metric looks for the label pattern anywhere in a task's text, not only in its owner field.
+
+One result must be attributed carefully. The archive's worst defect on the long call — all eight
+tasks handed to "Участник 1" — went to zero on the **legacy** path too, as soon as the voices were
+folded and named. That fix belongs to the naming work, not to the pipeline. The pipeline's own
+contribution to ownership is refusing an owner the recording does not know.
+
+**Not verified:** nine of eleven meetings were not re-condensed — each run costs minutes of local
+compute, and the two chosen are the owner's most recent call and the worst-scoring one. No human
+judged whether the new documents read better; what was done instead was reading them by hand on
+every iteration, which is what caught the four defects recorded above. The interface showing them
+was not seen running.
+
+## 2026-10-26 — Reading the condensed document, and what that found
+
+The measurement said the structured path was better on every counter. Reading its output on a real
+45-minute call said otherwise four times, and each of those is now a regression test. This is the
+entry to re-read before trusting a score again.
+
+1. **Over-extraction.** Without a cap, the 12-minute call came back as 59 bullets and 4 173
+   characters — 41 % of the conversation — with perfect purity and no duplicates. The figures
+   section filled with fragments: "скинуть что-то", "туда погнали". Fixed with a per-window cap, a
+   25-character and four-word floor per assertion, and section caps.
+2. **The cap then starved the decisions.** A single pooled ceiling of five records per window,
+   ranked by a weight that rewards a figure, handed every slot to numeric facts: the 45-minute call
+   came out with twelve figures, seven tasks and **one** decision, and it was the wrong one. Each
+   kind now has its own quota per window.
+3. **A decision spoken as an obligation is still a decision.** The first router demoted any
+   fact *or decision* opening with "надо"/"нужно" to a task. In Russian business speech the
+   decision of a call is routinely said that way — "надо переносить запуск на следующую неделю" is the decision of this one — so demoting them emptied the section. Facts phrased as
+   intentions are still re-filed; decisions keep the model's label; and a task with no action in it
+   is now re-filed as a fact, which is what "если первый вариант стоит 20 единиц, то второй стоит 3" was.
+4. **The model could not write the opening, and the metric could not tell.** The specificity check
+   distinguishes a generic paragraph from a concrete one; it cannot distinguish a coherent sentence
+   from an incoherent one. The accepted attempt read "Срок, связанный с 4 позиции,
+   показал, что из них 3 закрыли…" — every counter satisfied, unreadable. The opening is now
+   assembled in code from the records that survived, which also saves two model calls. It is duller
+   than a written paragraph and it is true.
+
+Two more defects came out of reading the code rather than the output. Word overlap by Jaccard
+scored "нам нужно написать инструкцию для подрядчика" against "выглядит так, что нам надо писать инструкцию" at 0,45 — Russian prefixes make "ставить" and "поставить"
+different stems — so the pair survived as two bullets; containment reads it at 0,71. And the
+figures section was ordered by a comparator that asked only whether one entry had figures and the
+other did not, which is not a strict weak ordering: Swift's sort scrambled the section, and it did
+so visibly.
+
+**A one-way door, caught by the harness.** Adding `screen` to `RecordingSession` as a non-optional
+array with a default value made **every session in the archive** fail to decode — not only
+meetings — because a synthesized `Decodable` requires each non-optional key regardless of its
+default. `LocalFlowBench` surfaced it immediately as "The data couldn't be read because it is
+missing"; in the application it would have emptied the archive view. The field is now stored
+optional, and three tests pin the minimal stored shape so the next added field hits a red test
+instead of the archive.
+
+## 2026-10-26 — Reading the shared screen (not verified live)
+
+Built: a second output on the ScreenCaptureKit stream that already carries system audio, with its
+own queue; a frame every three seconds reduced to a 16×16 greyscale thumbnail; recognition only of
+frames that differ from the last one *read*; Vision text recognition narrowed to the languages this
+Mac reports as supported, because asking for an unsupported language fails the request outright
+rather than degrading; a journal written line by line beside the audio; assembly into moments with
+a start and an end; citation identifiers so an assertion can point at a document that was shown;
+and a "Что показывали" section plus a screen tab. Off by default, excluded from the picture are the
+app's own windows, paused with the recording, deleted with the session.
+
+**Not verified, and not claimed.** No live capture was run. Exercising it means recording the
+owner's actual screen, which is not something to do unasked, so there are no measured numbers for
+disk per hour, CPU, recognition latency, or how well Russian text comes off a real dashboard — and
+no evidence that `VNRecognizeTextRequest` on this Mac supports Russian at all, only code that
+checks before asking. What is verified is the policy: 20 tests over change detection, text
+normalization, moment assembly, citation scoping and the document, plus compilation of the capture
+path. The first real meeting with it on is the test, and it should be a meeting whose screen the
+owner is content to have read.
+
+## 2026-10-26 — Цифры, которых никто не называл, и метрика, кричавшая «волк»
+
+Прогон всего архива через текущий конвейер (`LocalFlowBench summary-sweep`, 12 созвонов от 12 до
+92 минут) отчитался о четырёх выдуманных цифрах из восьми на одном созвоне и двух из четырёх на
+другом. Пять минут на то, чтобы посмотреть, что это за цифры, полностью изменили вывод: на первом
+это были **«Участник 1» и «Участник 2»** — цифра в метке говорящего, попавшая в счёт чисел на
+стороне конспекта, тогда как со стороны расшифровки `speech(of:)` эту метку снимает, потому что она
+стоит перед каждой строкой. Единственная оставшаяся, на третьем созвоне, — «1.5» из *«полтора»*.
+
+Неверного оказалось два, и только одно из двух было в документах.
+
+**Метрика.** `numberFidelity` снимает с конспекта тот же шаблон обобщённой метки, который
+`speech(of:)` уже снимал с исходника. Задача, доставшаяся «Участнику 2», — это задача с плохим
+исполнителем, что и мерит `ownerClarity`; это не документ, выдумавший число два. И та же метка
+больше не способна отменить сквозной абзац модели целиком — единственную часть документа,
+читающуюся как проза, выбрасывало из-за цифры в имени.
+
+**Дыра, которую она прикрывала.** Стадия переписывания проверяет, что в переписанной строке те же
+числа, что в заменяемой; сквозной абзац отвергается целиком, если в нём есть цифра, которой никто не
+называл. Стадия извлечения — единственная, которая вообще достаёт цифры из речи, — не проверяла
+ничего. Теперь она отвергает утверждение с цифрой, которой нет ни в сказанном, ни в том, что было на
+экране, с одним узким исключением: если реплики, на которые утверждение ссылается, называют число
+словами и не пишут ни одной цифры, то цифра в утверждении — это записанное слово. «30 %» над
+*«тридцать процентов»* — это запись сказанного, и отвергать её значит выбрасывать верное; реплика,
+которая уже пишет свои числа цифрами, ничего не записывала, поэтому цифра, которой в ней нет,
+отвергается. Замерено по архиву: Parakeet пишет числа цифрами примерно в восьми случаях из девяти
+(159 цифровых знаков против 20 числовых слов на 45-минутном созвоне) — поэтому исключение стоит
+иметь и оно достаточно узкое, чтобы быть безопасным.
+
+**Результат на 10 созвонах из 12** (прогон остановлен на десятом, когда стала собираться следующая
+версия): `numbers=N/N` везде, ссылки разрешаются 100 % везде, и **число пунктов не изменилось ни на
+одном созвоне** — 28, 13, 10, 46, 44, 20, 41, 23, 17, 17 до и после. Проверка не удалила ни одного
+утверждения: те «выдуманные» цифры были метками говорящих, а не содержимым документов.
+
+## 2026-10-26 — Семь дефектов детерминированной обработки текста
+
+Кросс-модельное ревью (Codex, затем проверка каждого пункта по коду) нашло то, чего не видит ни одна
+из метрик: места, где **верное** утверждение выходит искалеченным не моделью, а нашим собственным
+кодом. Все семь воспроизводятся на строках, которые перечислены ниже, и все закрыты тестами.
+
+1. **Слова-паразиты срезались по пробелу.** `leadingFillers` снимал «в общем», «смотри», «значит»,
+   «по сути», «типа», «как бы» и когда за словом шёл пробел, а не запятая. «В общем бюджете проекта
+   заложено больше» превращалось в «Бюджете проекта заложено больше», а указание «Смотри логи
+   сервера за вчерашний день» — в «Логи сервера за вчерашний день». Теперь эти шесть снимаются
+   только с запятой после них (`pausedFillers`); «ну», «вот», «так вот», «то есть», «и вот», «а вот»
+   по-прежнему снимаются и по пробелу, потому что в начале утверждения иначе не значат ничего.
+2. **Вставное слово оставляло за собой запятую.** Замена `", по сути,"` на `","` давала «Это,
+   проблема». Теперь пара запятых заменяется пробелом: «Это проблема».
+3. **Вставное слово срезалось с запятой только справа.** `" типа, "` вырезал настоящее слово из
+   «проекты такого типа, чтобы выбрать подходящий» → «проекты такого чтобы выбрать подходящий».
+   Форма с запятой справа убрана совсем: вставное слово стоит между двумя запятыми.
+4. **Точка сокращения съедалась.** Абзац темы снимал все хвостовые точки и ставил свою:
+   «Работы стоят 20 тыс.» выходило как «Работы стоят 20 тыс [12:20].» Список сокращений
+   (`abbreviations`: тыс, млн, руб, шт, мин, ч, кв…) теперь свою точку сохраняет. Та же проверка
+   используется разбивкой на предложения в метриках, чтобы «20 тыс.» не считалось двумя пунктами.
+5. **Срок обрезался посреди слова.** `String(value.prefix(60))` превращал «После того как заказчик
+   подтвердит требования и согласует дату запуска» в ячейку «…согласует да», что выглядит как
+   ошибка распознавания, а не как сокращённая фраза. Теперь обрезается по последнему пробелу и
+   заканчивается многоточием.
+6. **Часы в абзаце темы шли назад.** Решения шли перед фактами, поэтому метки времени в одном
+   абзаце прыгали: решение в [15:00] стояло над измерением в [12:20], которое к нему привело.
+   Теперь абзаца два — что решили и как есть, — и каждый читается вперёд.
+7. **Одно и то же дважды.** Задача сворачивалась в решение только при отсутствии исполнителя и
+   срока, а исполнитель приписывается ещё на извлечении — по первому лицу. Поэтому «я перегоню
+   метаданные» оставалось и решением в абзаце темы, и строкой таблицы. Теперь, когда у задачи есть
+   исполнитель или срок, уходит решение: таблица говорит кто и когда, а решение повторяет её.
+
+**Порядок разделов.** «Задачи» и «Открытые вопросы» стояли под шестью абзацами тем — то есть
+исполнитель, срок и неотвеченный вопрос оказывались последним, до чего читатель доходит. Теперь
+порядок такой: о чём → решения → задачи → открытые вопросы → по темам → состояние и цифры → что
+показывали. Итоги впереди, подробности после.
+
+**Вступление.** Строка «Решения: 5. Задачи: 7. Открытые вопросы: 3.» убрана из вступления, когда
+абзац модели принят: она пересчитывала разделы, которые теперь стоят прямо под ней. Осталось
+«Участники: …». В запасном варианте, собранном кодом, счётчики остаются — там это единственное
+содержание.
+
+**Решения — своим списком.** Первая попытка оставила их внутри абзацев тем и выделила жирным.
+Прочитанный настоящий документ закрыл вопрос: на 45-минутном созвоне пять решений были размазаны по
+шести абзацам, и итог встречи приходилось собирать чтением всего документа. Теперь «Решения» —
+список сразу под вступлением, а абзац темы несёт только то, как есть, в порядке разговора: это и
+есть то, для чего нужна группировка, и повтор решения в абзаце был бы документом, сказанным дважды.
+
+**Чего это не доказывает.** Что документ стало легче читать — проверяется чтением, а не прогоном.
+Семь пунктов выше — это места, где текст был сломан механически, и они закрыты; суждение о том,
+понятен ли конспект, остаётся за владельцем.
+
+## 2026-10-26 — Что показало чтение настоящих документов
+
+Прогон складывает числа; документ показывает текст. `LOCALFLOW_SWEEP_DIR` заставляет `summary-sweep`
+выписывать каждый конспект файлом (в указанную папку — это настоящие разговоры владельца, и рядом с
+репозиторием им места нет), и первые два прочитанных документа дали больше, чем все метрики за ночь.
+
+**Таблица задач на 45-минутном созвоне.** Семь строк, в шести — «не назван». Столбец, в котором
+каждая строка одно и то же слово, — это столбец ни о чём, ровно как колонка сроков, убранная раньше;
+а метрика `ownerClarity` при этом показывала `generic_owner=0`, потому что «не назван» не подходит
+под шаблон обобщённого исполнителя. Теперь без имён и сроков задачи — список; таблица возвращается,
+как только у кого-то есть имя или срок. Пять из семи задач начинались словом «Нужно» в столбце
+«Что» — оно снято перед инфинитивом. На 12-минутном созвоне одна ячейка была длиной 230 знаков:
+несколько задач, слитых извлечением в одно предложение, превращали таблицу в стену — ячейка
+обрезается по слову на 120 знаках, отметка времени ведёт к сказанному целиком.
+
+**Решения.** Пять решений 45-минутного созвона стояли внутри шести абзацев тем, выделенные жирным.
+Выделение помогало, но итог встречи всё равно надо было собирать чтением всего документа. Решения
+теперь — список сразу под вступлением.
+
+**Одна уцелевшая тема — не раздел.** Когда решения уехали в свой список, темы стали нести только
+то, как есть, и на 45-минутном созвоне из пяти тем уцелела одна: «По темам» с одним заголовком
+стояло рядом с «Состоянием и цифрами» из восьми пунктов — заголовок заявлял структуру, которой в
+документе нет. Теперь две темы или ни одной; при одной всё уходит под плоский заголовок. Это
+видно и в числах прогона: `topics=1` и `topics=0` на первых двух созвонах той версии.
+
+**«Разное».** Модель отдала в эту тему девять утверждений из двадцати одного: удержание, клиенты,
+косты на API, реклама в телеграме, креативы, цены, рендеринг. Это не тема, это корзина. Её
+содержимое уходит под плоский заголовок «Состояние и цифры»; четыре осмысленные темы остаются.
+
+**Вид утверждения определялся по обрывку.** «Вот никто не хочет покупать средний тир» доехало до
+таблицы задач: проверка на строку, которая ни о чём не просит, смотрит на первое слово, а первым
+словом было «вот» — его снимает уже следующая стадия. Маршрутизация теперь идёт по письменной фразе.
+
+**Инфинитив в начале «факта».** «Сделать ресерч, выбрать сюжеты и адаптировать под формат» пришло с
+меткой ФАКТ и стояло в разделе цифр как состояние чего-то. Первое слово-инфинитив теперь делает
+утверждение плановым — с исключением для русских существительных на -сть и -рть, потому что первая
+версия правила прочитала «Готовность дошла до тридцати процентов» как план.
+
+**Вступление говорило канцеляритом.** «Разговор посвящен обсуждению текущего состояния работы и
+планов по развитию проекта, где обсуждались проблемы…» — три длинных предложения отчётного стиля в
+том месте, которое читают первым. Инструкция теперь прямо запрещает «разговор посвящён», «в ходе
+беседы», «обсуждались вопросы» и требует коротких простых фраз от третьего лица.
+
+**87-минутный созвон: ещё два дефекта.** «Открытый вопрос» на пятьсот знаков — кусок речи,
+отданный извлечением целиком, — занимал раздел один; теперь пункт любого списка обрезается по слову
+так же, как ячейка таблицы. И среди итогов встречи стояло «Цена варьируется от 3-4 до 17 долларов за
+некоторые ролики»: строка с цифрами и без инфинитива — измерение, какой бы ни была метка. Проверка
+намеренно узкая (`carriesAnInfinitive`, без настоящего времени, которое принимает `hasAction`):
+«варьируется» — это описание, а решение, сказанное как обязанность, инфинитив в себе несёт.
+
+**Чего делать не стали.** Решение, сказанное как обязанность («надо переносить запуск на следующую
+неделю»), по-прежнему остаётся решением. Чтение документа говорило обратное — «Нужно набросить
+структуру сайта» стояло среди итогов встречи, — но тест на эту строку хранит прежний замер: такая
+демотация оставляла 45-минутный созвон с одним решением, и не тем. Замер весомее одного чтения.
+
+**Что осталось незакрытым.** На 12-минутном созвоне задача «Попробовать 1-2 сэмплика по минуте» и
+решение «Договорились попробовать оттянуть работу на неделю или к субботе, чтобы попробовать 1-2
+сэмплика по минуте» доехали обе: свёртка требует достаточного пересечения слов, а решение длиннее
+задачи втрое. Порог не тронут — ослабить его значит начать терять разные утверждения.
+
+## 2026-10-26 — Весь архив на том, что установлено
+
+`LocalFlowBench summary-sweep` на сборке 0.6.0 (26) — той, что стоит в `~/Applications`. 12 созвонов,
+от 12 до 92 минут, 8,2 часа разговоров суммарно.
+
+| созвон | минуты | темы | вызовы | знаков | пунктов | чистота | ссылки | цифры | задач | секунд |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 98AD9438 | 45,2 | 0 | 15 | 2593 | 27 | 0,85 | 27/27 | 20/20 | 6 | 92 |
+| 02012CCE | 12,0 | 0 | 7 | 1468 | 12 | 1,00 | 12/12 | 5/5 | 5 | 23 |
+| CFEEC843 | 30,5 | 0 | 6 | 1481 | 10 | 0,90 | 10/10 | 3/3 | 2 | 59 |
+| 56DDBB91 | 87,6 | 3 | 25 | 4203 | 45 | 0,96 | 45/45 | 32/32 | 15 | 237 |
+| A70FBD9B | 92,4 | 2 | 26 | 3923 | 44 | 0,95 | 44/44 | 18/18 | 15 | 243 |
+| 8809090D | 61,3 | 0 | 9 | 2283 | 19 | 0,95 | 19/19 | 3/3 | 4 | 89 |
+| F66AB0B4 | 54,1 | 3 | 18 | 3719 | 41 | 1,00 | 41/41 | 26/26 | 15 | 191 |
+| 681412AF | 29,5 | 2 | 12 | 2572 | 23 | 1,00 | 23/23 | 18/18 | 8 | 77 |
+| 327DDB57 | 15,5 | 2 | 7 | 1596 | 17 | 1,00 | 17/17 | 2/2 | 3 | 39 |
+| D95B4957 | 13,4 | 0 | 7 | 1589 | 16 | 1,00 | 16/16 | 9/9 | 3 | 31 |
+| 9FCFB4CF | 34,8 | 4 | 12 | 2432 | 24 | 0,96 | 24/24 | 13/13 | 5 | 99 |
+| 42CBF8CC | 29,4 | 3 | 12 | 2136 | 20 | 1,00 | 20/20 | 16/16 | 4 | 78 |
+
+**Верность цифр 1,00 на всех двенадцати** — было 9 из 12 (и те три были метками говорящих, а не
+выдумкой; см. выше). **Ссылки разрешаются 100 % на всех двенадцати.** Ни одна защита не обрушила
+документ ни на одном созвоне (`guarded=0` всюду). Чистота разделов: среднее 0,964, минимум 0,85.
+Девяностодвухминутный созвон — 243 секунды; весь архив — 21 минута на 8,2 часа разговоров.
+
+**Пунктов стало меньше на 0–1 на созвон** (28→27, 46→45, 20→19, 13→12, 17→16, остальные без
+изменений): это снятые повторы и строки, которые не были ни задачей, ни решением. Знаков — меньше на
+10–15 % (2593 против 3049 на 45-минутном): ушла строка со счётчиками, обрезались пятисотзначные
+пункты, пропали дубли.
+
+**Темы — на 7 созвонах из 12.** Правило «две темы или ни одной» убрало их там, где после выноса
+решений в свой список оставалась одна тема: на 45-минутном созвоне, например, документ теперь —
+решения, задачи, вопросы и один список состояния. Это честнее, чем заголовок «По темам» над одним
+абзацем.
+
+**`opening_specific` — 3 из 12, и это не регресс, а исправленная метрика.** Раньше под каждым
+вступлением стояла строка «Решения: 5. Задачи: 7. Открытые вопросы: 3.», и её цифры проходили
+проверку сами по себе — поэтому все 12 созвонов отчитывались о конкретном вступлении. Строка ушла из
+вступления, а проверка теперь не принимает её, даже если она вернётся. Что проверка мерит на самом
+деле: называет ли абзац человека или цифру. Абзацы при этом читаются конкретно — вот начала трёх
+подряд, без выбора: «Участники договорились сосредоточиться на создании готовых сценок…»; «Разговор
+прошел о том, как они проанализировали текущую производительность…»; «Разговор прошел о том, как они
+пытались договориться о сотрудничестве…». Ни один не начинается с «разговор посвящён» или
+«обсуждались вопросы» — но ни один и не называет ни имени, ни цифры, поэтому проверка их не
+принимает.
+
+**Что осталось видно в документах.** `generic_owner` — 1 и 2 на двух созвонах: это «Участник 1» в
+тексте задачи, а не в столбце исполнителя («Пообщаться, чтобы Участник 1 мог скинуть»); разрешить
+метку в имя нечем, когда имён никто не называл. На 87-минутном созвоне среди решений остаются
+строки, которые решениями не являются («Мое время ломается первым», «Выплата расслабь вместе с
+процентом и зарплата») — метке модели здесь верят, и демотация по обязанности запрещена прежним
+замером. И остаётся мусор распознавания, прошедший все проверки: «имидж ту видео стоит 3 цента 4
+цент». Ни то, ни другое детерминированным правилом не закрывается.

@@ -10,6 +10,12 @@ struct Bench {
             try AppPaths.create()
             let args = Array(CommandLine.arguments.dropFirst())
             switch args.first {
+            case "diagnostics":
+                try diagnostics(output: args.count > 1 ? args[1] : nil)
+            case "latency":
+                guard args.count >= 2 else { throw LocalFlowError.message("latency AUDIO [RUNS=3] [OUTPUT.json]") }
+                guard let runs = args.count > 2 ? Int(args[2]) : 3 else { throw LocalFlowError.message("RUNS must be an integer") }
+                try await latency(audio: args[1], runs: runs, output: args.count > 3 ? args[3] : nil)
             case "install":
                 for id in args.dropFirst() {
                     guard let model = ModelCatalog.packages.first(where: { $0.id == id }) else { throw LocalFlowError.message("Unknown model: \(id)") }
@@ -77,7 +83,7 @@ struct Bench {
                 // without writing anything back: the "after" for a run that was already recorded.
                 guard args.count >= 2 else { throw LocalFlowError.message("summarize SESSION_PREFIX [OUTPUT.json]") }
                 let wanted = args[1].lowercased()
-                let store = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"))
+                let store = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"), readOnly: true)
                 guard let session = try store.sessions().first(where: { $0.id.uuidString.lowercased().hasPrefix(wanted) }) else {
                     throw LocalFlowError.message("No session starts with \(args[1])")
                 }
@@ -122,7 +128,7 @@ struct Bench {
                 // identity map, without writing anything back.
                 guard args.count >= 2 else { throw LocalFlowError.message("diarize SESSION_PREFIX [OUTPUT.json]") }
                 let target = args[1].lowercased()
-                let archive = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"))
+                let archive = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"), readOnly: true)
                 guard let stored = try archive.sessions().first(where: { $0.id.uuidString.lowercased().hasPrefix(target) }) else {
                     throw LocalFlowError.message("No session starts with \(args[1])")
                 }
@@ -180,6 +186,219 @@ struct Bench {
                 await engine.scheduleUnload(after: 1)
                 try await Task.sleep(for: .seconds(2))
                 print("auto_unloaded=\(!(await engine.isLoaded)) after_unload_mb=\(ProcessMetrics.footprintMB)")
+            case "identities":
+                // What folding small diarizer identities does to every meeting already in the
+                // archive, from the stored turns and without touching anything. Numbers only.
+                let archive = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"), readOnly: true)
+                let meetings = try archive.sessions().filter { $0.kind == .meeting }
+                print("session  minutes  remote_s  before  after  folded_s  shares_after")
+                var changed = 0
+                for meeting in meetings {
+                    let remote = meeting.segments.filter { $0.source == "system" && $0.speaker != nil }
+                    guard !remote.isEmpty else { continue }
+                    let spans = remote.map { SpeakerSpan(start: $0.start, end: $0.end, speaker: $0.speaker ?? "") }
+                    let folded = TextSafety.foldMinorIdentities(spans)
+                    let before = Set(spans.map(\.speaker)).count
+                    let after = Set(folded.map(\.speaker)).count
+                    let total = TextSafety.speechTime(spans).values.reduce(0, +)
+                    let movedSeconds = TextSafety.minorIdentities(spans)
+                        .reduce(0.0) { $0 + (TextSafety.speechTime(spans)[$1] ?? 0) }
+                    let shares = TextSafety.speechTime(folded).sorted { $0.value > $1.value }
+                        .map { String(format: "%.0f%%", $0.value / max(1, total) * 100) }.joined(separator: "/")
+                    if before != after { changed += 1 }
+                    print(String(format: "%@  %7.1f  %8.0f  %6d  %5d  %8.0f  %@",
+                                 meeting.id.uuidString.prefix(8).description, meeting.duration / 60,
+                                 total, before, after, movedSeconds, shares))
+                }
+                print("meetings=\(meetings.count) with_identities_changed=\(changed)")
+            case "names":
+                // Which names the recordings themselves offer, after folding small identities.
+                // Text goes to stdout only; nothing is written back and nothing is committed.
+                let archive = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"), readOnly: true)
+                for meeting in try archive.sessions().filter({ $0.kind == .meeting }) {
+                    let folded = meeting.foldingMinorIdentities()
+                    let voices = Set(folded.segments.compactMap { $0.source == "system" ? $0.speaker : nil })
+                    guard !voices.isEmpty else { continue }
+                    let proposals = SpeakerNaming.proposals(for: folded)
+                    let summary = proposals.isEmpty ? "—" : proposals.map {
+                        "\($0.id)=\($0.name)(\($0.mentions), \($0.reason.rawValue), \($0.evidence.timestamp))"
+                    }.joined(separator: "  ")
+                    print(String(format: "%@  %5.1fm  voices=%d  %@",
+                                 meeting.id.uuidString.prefix(8).description, meeting.duration / 60, voices.count, summary))
+                }
+            case "transcript":
+                // Runs the line-by-line cleanup over an archive entry with the real editor model
+                // and reports what the turn guard accepted, without writing anything back.
+                guard args.count >= 2 else { throw LocalFlowError.message("transcript SESSION_PREFIX [OUTPUT.json]") }
+                let wanted = args[1].lowercased()
+                let archive = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"), readOnly: true)
+                guard let stored = try archive.sessions().first(where: { $0.id.uuidString.lowercased().hasPrefix(wanted) }) else {
+                    throw LocalFlowError.message("No session starts with \(args[1])")
+                }
+                let source = stored.foldingMinorIdentities().referencedText
+                let windows = TextSafety.lineChunks(source, maxCharacters: EditPlan.transcriptChunkCharacters).count
+                print("turns=\(TextSafety.turnPrefixes(source).count) characters=\(source.count) windows=\(windows)")
+                let engine = TextEngine(); let start = Date()
+                let cleaned = try await engine.edit(source, mode: .transcript, dictionary: [])
+                let elapsed = Date().timeIntervalSince(start)
+                let kept = zip(TextSafety.lineChunks(source, maxCharacters: EditPlan.transcriptChunkCharacters),
+                               TextSafety.lineChunks(cleaned.text, maxCharacters: EditPlan.transcriptChunkCharacters))
+                    .filter { $0.0 != $0.1 }.count
+                print("elapsed_s=\(String(format: "%.1f", elapsed)) characters_out=\(cleaned.text.count) turns_out=\(TextSafety.turnPrefixes(cleaned.text).count)")
+                print("turns_preserved=\(TextSafety.turnPrefixes(source) == TextSafety.turnPrefixes(cleaned.text)) guarded=\(cleaned.guarded) issues=\(cleaned.issues.map(\.rawValue)) windows_changed=\(kept) footprint_mb=\(ProcessMetrics.footprintMB)")
+                if args.count > 2 {
+                    // Numbers to the file, speech to stdout: the archive is real business speech.
+                    let row: [String: Any] = ["turns": TextSafety.turnPrefixes(source).count, "characters": source.count,
+                                              "windows": windows, "elapsed_s": elapsed, "characters_out": cleaned.text.count,
+                                              "turns_preserved": TextSafety.turnPrefixes(source) == TextSafety.turnPrefixes(cleaned.text),
+                                              "guarded": cleaned.guarded, "issues": cleaned.issues.map(\.rawValue)]
+                    try JSONSerialization.data(withJSONObject: row, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: args[2]), options: .atomic)
+                }
+                print("----- cleaned transcript (stdout only) -----")
+                print(cleaned.text)
+                await engine.unload()
+            case "summary-quality":
+                // Scores the condensed documents already in the archive against their own
+                // transcripts: the "before" this work is measured against. Numbers only.
+                let archive = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"), readOnly: true)
+                var scores: [SummaryScore] = []
+                for meeting in try archive.sessions().filter({ $0.kind == .meeting }) {
+                    guard let summary = meeting.summary, !meeting.segments.isEmpty else { continue }
+                    let names = meeting.speakers.values.filter { !$0.isEmpty }
+                    let score = SummaryQuality.score(summary.text, source: meeting.referencedText,
+                                                     duration: meeting.duration, speakers: Array(names))
+                    scores.append(score)
+                    print("\(meeting.id.uuidString.prefix(8)) \(String(format: "%5.1f", meeting.duration / 60))m \(score.line)")
+                }
+                func mean(_ value: (SummaryScore) -> Double) -> Double {
+                    scores.isEmpty ? 0 : scores.map(value).reduce(0, +) / Double(scores.count)
+                }
+                // Two of these documents are known failures of a merge pass that was fixed in
+                // September: 18 000 and 20 000 characters of near-verbatim repetition. They pull
+                // the mean so far that it stops describing anything, so the median is reported
+                // beside it rather than quietly dropping them.
+                func median(_ value: (SummaryScore) -> Double) -> Double {
+                    let sorted = scores.map(value).sorted()
+                    guard !sorted.isEmpty else { return 0 }
+                    return sorted.count % 2 == 1 ? sorted[sorted.count / 2]
+                        : (sorted[sorted.count / 2 - 1] + sorted[sorted.count / 2]) / 2
+                }
+                for (name, value) in [("mean", mean), ("median", median)] as [(String, ((SummaryScore) -> Double) -> Double)] {
+                    print(String(format: "n=%d %@ compression=%.3f purity=%.2f redundancy=%.2f citation_validity=%.2f number_fidelity=%.2f number_coverage=%.2f owner_clarity=%.2f",
+                                 scores.count, name, value(\.compression), value(\.sectionPurity), value(\.redundancy),
+                                 value(\.citationValidity), value(\.numberFidelity), value(\.numberCoverage), value(\.ownerClarity)))
+                }
+                print("specific_openings=\(scores.filter(\.openingIsSpecific).count)/\(scores.count)")
+            case "summary-sweep":
+                // Every meeting in the archive through the current condensing path, to see how
+                // often each guard fires on real material rather than on the two calls that get
+                // looked at. Numbers to the file, nothing written back.
+                let store = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"), readOnly: true)
+                let editor = TextEngine()
+                var rows: [[String: Any]] = []
+                for stored in try store.sessions() where stored.kind == .meeting {
+                    guard !stored.segments.isEmpty else { continue }
+                    var prepared = stored.foldingMinorIdentities()
+                    for proposal in SpeakerNaming.proposals(for: prepared) where (prepared.speakers[proposal.id] ?? "").isEmpty {
+                        prepared.speakers[proposal.id] = proposal.name
+                    }
+                    let source = prepared.referencedText
+                    guard source.count > 400 else { continue }
+                    let started = Date()
+                    let result = try await editor.edit(source, mode: .summary, dictionary: [], screen: prepared.screen)
+                    let elapsed = Date().timeIntervalSince(started)
+                    let score = SummaryQuality.score(result.text, source: source, duration: prepared.duration,
+                                                     speakers: Array(prepared.speakers.values.filter { !$0.isEmpty }))
+                    let topics = RichText.blocks(result.text).compactMap { block -> String? in
+                        if case .heading(let level, let text) = block, level > 2 { return text }
+                        return nil
+                    }
+                    let narrative = result.text.contains("## По темам") && !topics.isEmpty
+                    // The numbers say whether a guard fired; only the document says whether it
+                    // reads. `LOCALFLOW_SWEEP_DIR` writes each one out so a whole archive can be
+                    // read in one sitting. It holds real conversations, so it is written where it
+                    // is asked for and nowhere near the repository.
+                    if let folder = ProcessInfo.processInfo.environment["LOCALFLOW_SWEEP_DIR"], !folder.isEmpty {
+                        let url = URL(fileURLWithPath: folder, isDirectory: true)
+                        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+                        try? result.text.write(to: url.appendingPathComponent("\(prepared.id.uuidString.prefix(8)).md"),
+                                               atomically: true, encoding: .utf8)
+                    }
+                    print("\(prepared.id.uuidString.prefix(8)) \(String(format: "%5.1f", prepared.duration / 60))m topics=\(topics.count) guarded=\(result.guarded) calls=\(result.proposals.count) \(score.line) elapsed_s=\(String(format: "%.1f", elapsed))")
+                    if !topics.isEmpty { print("    темы: " + topics.joined(separator: " · ")) }
+                    rows.append(["id": String(prepared.id.uuidString.prefix(8)), "minutes": prepared.duration / 60,
+                                 "topics": topics.count, "guarded": result.guarded, "calls": result.proposals.count,
+                                 "characters": score.characters, "purity": score.sectionPurity,
+                                 "number_fidelity": score.numberFidelity, "number_coverage": score.numberCoverage,
+                                 "tasks": score.tasks, "generic_owner": score.tasksWithGenericOwner,
+                                 "opening_specific": score.openingIsSpecific, "sectioned": narrative,
+                                 "elapsed_s": elapsed])
+                }
+                await editor.unload()
+                let sweepOut = args.count >= 2 ? args[1] : "/tmp/localflow-summary-sweep.json"
+                try JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted])
+                    .write(to: URL(fileURLWithPath: sweepOut))
+                print("Готово: \(rows.count) созвонов → \(sweepOut)")
+            case "summary-ab":
+                // Runs both condensing strategies over the same prepared material and scores them,
+                // so an architecture win can be told apart from a model win. Nothing is written
+                // back. Numbers to the file, text to stdout.
+                guard args.count >= 2 else { throw LocalFlowError.message("summary-ab SESSION_PREFIX [OUTPUT.json]") }
+                let wanted = args[1].lowercased()
+                let store = try Store(url: AppPaths.root.appendingPathComponent("archive.sqlite"), readOnly: true)
+                guard let stored = try store.sessions().first(where: { $0.id.uuidString.lowercased().hasPrefix(wanted) }) else {
+                    throw LocalFlowError.message("No session starts with \(args[1])")
+                }
+                // The state the interface reaches once the owner accepts what the recording offers:
+                // small identities folded, proposed names applied. Both strategies read it.
+                var prepared = stored.foldingMinorIdentities()
+                for proposal in SpeakerNaming.proposals(for: prepared) where (prepared.speakers[proposal.id] ?? "").isEmpty {
+                    prepared.speakers[proposal.id] = proposal.name
+                }
+                let source = prepared.referencedText
+                let names = Array(prepared.speakers.values.filter { !$0.isEmpty })
+                print("session=\(stored.id.uuidString.prefix(8)) minutes=\(String(format: "%.1f", stored.duration / 60)) referenced=\(source.count) turns=\(SummaryMaterial.parse(source).turns.count) names=\(names.sorted())")
+                if let existing = stored.summary {
+                    let score = SummaryQuality.score(existing.text, source: source, duration: stored.duration, speakers: names)
+                    print("archive    \(score.line)")
+                }
+                var rows: [String: Any] = ["session": stored.id.uuidString, "duration_s": stored.duration,
+                                           "referenced_characters": source.count]
+                let dictionary = try store.dictionary()
+                for strategy in [EditPlan.SummaryStrategy.legacy, .structured] {
+                    let engine = TextEngine()
+                    let start = Date()
+                    let result = try await engine.edit(source, mode: .summary, dictionary: dictionary, strategy: strategy)
+                    let elapsed = Date().timeIntervalSince(start)
+                    let score = SummaryQuality.score(result.text, source: source, duration: stored.duration, speakers: names)
+                    print("\(strategy.rawValue.padding(toLength: 10, withPad: " ", startingAt: 0)) \(score.line) calls=\(result.proposals.count) elapsed_s=\(String(format: "%.1f", elapsed))")
+                    // What the model actually replied, when asked for: the only way to tell a
+                    // prompt that is not followed from a parser that is too strict.
+                    if ProcessInfo.processInfo.environment["LOCALFLOW_SHOW_REPLIES"] != nil {
+                        for (index, proposal) in result.proposals.enumerated() {
+                            print("--- \(strategy.rawValue) reply \(index + 1)/\(result.proposals.count) ---")
+                            print(proposal)
+                        }
+                    }
+                    rows["\(strategy.rawValue)_characters"] = score.characters
+                    rows["\(strategy.rawValue)_purity"] = score.sectionPurity
+                    rows["\(strategy.rawValue)_redundancy"] = score.redundancy
+                    rows["\(strategy.rawValue)_citation_validity"] = score.citationValidity
+                    rows["\(strategy.rawValue)_number_fidelity"] = score.numberFidelity
+                    rows["\(strategy.rawValue)_owner_clarity"] = score.ownerClarity
+                    rows["\(strategy.rawValue)_opening_specific"] = score.openingIsSpecific
+                    rows["\(strategy.rawValue)_tasks"] = score.tasks
+                    rows["\(strategy.rawValue)_bullets"] = score.bullets
+                    rows["\(strategy.rawValue)_calls"] = result.proposals.count
+                    rows["\(strategy.rawValue)_elapsed_s"] = elapsed
+                    print("--- \(strategy.rawValue) (stdout only) ---")
+                    print(result.text)
+                    await engine.unload()
+                }
+                if args.count > 2 {
+                    try JSONSerialization.data(withJSONObject: rows, options: [.prettyPrinted, .sortedKeys])
+                        .write(to: URL(fileURLWithPath: args[2]), options: .atomic)
+                }
             case "storage":
                 // Accelerated two-hour PCM stress test. This does not simulate a real call.
                 let id = UUID(); let root = AppPaths.audio(id)
@@ -214,7 +433,7 @@ struct Bench {
                 let preserved = try await engine.annotate(manual, audio: URL(fileURLWithPath: args[2]), profiles: profiles)
                 guard preserved.speakers["S1"] == "Ручное имя" else { throw LocalFlowError.message("Manual speaker name overwritten") }
                 print("reorder_verified=true manual_name_preserved=true")
-            case "diarize":
+            case "diarize-file":
                 guard args.count > 1 else { return }
                 ModelHub.offlineMode = true
                 let start = Date()
@@ -228,7 +447,7 @@ struct Bench {
                 let json = try JSONSerialization.data(withJSONObject: spans, options: [.sortedKeys])
                 print("spans=" + String(decoding: json, as: UTF8.self))
                 print("speakers=\(result.speakerDatabase?.count ?? 0) elapsed_s=\(Date().timeIntervalSince(start)) footprint_mb=\(ProcessMetrics.footprintMB)")
-            default: print("LocalFlowBench install [asr8 editor editor-qwen speakers] | transcribe FILE | edit TEXT | diarize FILE")
+            default: print("LocalFlowBench install [asr8 editor editor-qwen speakers] | transcribe FILE | edit TEXT | diagnostics [OUTPUT.json] | latency AUDIO [RUNS] [OUTPUT.json] | diarize SESSION_PREFIX [OUTPUT.json] | diarize-file AUDIO [SPEAKERS] [THRESHOLD]")
             }
         } catch { FileHandle.standardError.write(Data((error.localizedDescription + "\n").utf8)); exit(1) }
     }

@@ -20,6 +20,20 @@ private actor FixtureRecognizer: SpeechRecognizing {
 }
 
 final class TranscriberTests: XCTestCase {
+    func testEmptyAudioJournalDoesNotReplaceExistingTranscript() async throws {
+        var session = RecordingSession(kind: .dictation)
+        session.state = "ready"; session.segments = [.init(start: 0, end: 1, text: "Сохранённый исходник")]
+        let root = AppPaths.audio(session.id)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data("[]".utf8).write(to: root.appendingPathComponent("parts.json"))
+        let store = try Store(url: root.appendingPathComponent("fixture.sqlite")); try store.save(session)
+        let recognizer = FixtureRecognizer()
+        do { _ = try await SessionTranscriber(recognizer: recognizer, store: store).transcribe(session); XCTFail("Expected unavailable audio") }
+        catch { XCTAssertFalse(error is CancellationError) }
+        XCTAssertEqual(try store.session(session.id)?.rawText, session.rawText)
+        let calls = await recognizer.callCount(); XCTAssertEqual(calls, 0)
+    }
     private func fixture() throws -> (RecordingSession, Store) {
         let session = RecordingSession(kind: .note)
         let root = AppPaths.audio(session.id)

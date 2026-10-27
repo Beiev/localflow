@@ -79,6 +79,13 @@ if __name__ == '__main__':
     try:
         if added:
             run(['security', 'list-keychains', '-d', 'user', '-s', *search_list, KEYCHAIN])
+        # Nested helpers first: signing the bundle does not re-sign what is already signed
+        # inside it, and an ad-hoc helper inside an identity-signed application is the weak
+        # link in exactly the chain this signature exists to establish.
+        for helper in sorted((Path(app) / 'Contents/MacOS').iterdir()):
+            if helper.name == 'LocalFlow' or not helper.is_file():
+                continue
+            run(['codesign', '--force', '--sign', identity, '--keychain', KEYCHAIN, '--timestamp=none', '--options', 'runtime', helper])
         run(['codesign', '--force', '--sign', identity, '--keychain', KEYCHAIN, '--timestamp=none', '--options', 'runtime', '--entitlements', ROOT / 'Resources/LocalFlow.entitlements', app])
     finally:
         if added:

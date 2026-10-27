@@ -15,6 +15,9 @@ public struct SessionTranscriber: Sendable {
     public func transcribe(_ session: RecordingSession, progress: @escaping @Sendable (Double, Double) -> Void = { _,_ in }) async throws -> RecordingSession {
         var result = session; result.state = "processing"; result.error = nil
         let parts = try AudioFiles.parts(session.id)
+        guard !parts.isEmpty else {
+            throw LocalFlowError.message("Аудио недоступно. Сохранённая расшифровка не изменена.")
+        }
         if result.transcribedThrough == nil { result.segments = []; result.transcribedThrough = [:] }
         for source in Set(parts.map(\.source)).sorted() {
             try Task.checkCancellation()

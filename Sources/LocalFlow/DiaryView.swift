@@ -17,11 +17,11 @@ struct DiaryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 HStack {
-                    Text(current.createdAt.formatted(date: .complete, time: .omitted)).font(.caption).foregroundStyle(.secondary)
-                    if wordCount > 0 { Text("· \(wordCount) слов").font(.caption).foregroundStyle(.secondary) }
+                    Text(RussianDates.day(current.createdAt)).font(.caption).foregroundStyle(.secondary)
+                    if wordCount > 0 { Text("· " + RussianDates.counted(wordCount, "слово", "слова", "слов")).font(.caption).foregroundStyle(.secondary) }
                     Spacer()
                 }
-                TextField("Название заметки", text: Binding(get: { current.title }, set: { var note = current; note.title = $0; model.save(note) }))
+                TextField("Название заметки", text: Binding(get: { current.title }, set: { model.rename(current, to: $0) }))
                     .font(.title.bold()).textFieldStyle(.plain).disabled(busy)
                 TextField("О чём хотите рассказать? Короткое описание — необязательно", text: Binding(get: { current.noteDescription ?? "" }, set: { var note = current; note.noteDescription = $0; model.save(note) }), axis: .vertical)
                     .lineLimit(2...5).textFieldStyle(.plain).foregroundStyle(.secondary).disabled(busy)
@@ -39,7 +39,7 @@ struct DiaryView: View {
                                 Button("Редактировать текст") { text = content; editing = true }
                                 Button("Экспорт") { model.export(current, text: content) }
                                 Menu("Обработать заново") {
-                                    ForEach(ProcessingMode.allCases, id: \.self) { mode in
+                                    ForEach(ProcessingMode.available(for: current.kind), id: \.self) { mode in
                                         Button(mode.title) { model.transform(current, mode: mode) }
                                     }
                                 }
@@ -64,7 +64,8 @@ struct DiaryView: View {
                         }
                     }
                 } else if !content.isEmpty {
-                    Text(content).font(.system(size: 16)).lineSpacing(7).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                    FormattedText(markdown: content) { seconds in model.playMoment(current, at: seconds) }
+                        .font(.system(size: 16)).frame(maxWidth: .infinity, alignment: .leading)
                 } else if !busy {
                     Text("Заметка уже сохранена. Начните диктовку, когда будете готовы.")
                         .foregroundStyle(.secondary).padding(.top, 32)
